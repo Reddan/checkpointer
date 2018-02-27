@@ -22,7 +22,6 @@ def log(color, title, invoke_level, name):
   print(title_log + rest_log)
 
 def store_on_demand(func, name, storage='pickle', force=False, should_expire=None, invoke_level=0):
-  print(force)
   if type(storage) == str:
     storage = storages[storage]
   init_storage(storage)

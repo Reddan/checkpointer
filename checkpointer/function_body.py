@@ -3,8 +3,11 @@ import inspect
 from types import FunctionType, CodeType
 from relib import imports, hashing, raypipe
 
-def get_function_dir(func):
+def get_function_dir_path(func):
   return os.path.dirname(os.path.abspath(func.__code__.co_filename))
+
+def get_function_project_dir_path(func_dir_path):
+  return imports.find_parent_dir_containing(func_dir_path, '.git') or imports.find_parent_dir_containing(func_dir_path, '__init__.py') or os.getcwd()
 
 def get_function_body(func):
   # TODO: Strip comments
@@ -13,8 +16,6 @@ def get_function_body(func):
   lines = [line for line in lines if line]
   return '\n'.join(lines)
 
-def get_func_proj_path(func_dir_path):
-  return imports.find_parent_dir_containing(func_dir_path, '.git') or imports.find_parent_dir_containing(func_dir_path, '__init__.py') or os.getcwd()
 
 def get_code_children(__code__):
   return raypipe \
@@ -35,7 +36,7 @@ def get_func_children(func, func_proj_path, func_by_wrapper={}, neighbor_funcs=[
   def clear_candidate(candidate_func):
     if isinstance(candidate_func, FunctionType):
       if candidate_func not in neighbor_funcs:
-        func_dir_path = get_function_dir(candidate_func)
+        func_dir_path = get_function_dir_path(candidate_func)
         return func_proj_path in func_dir_path
     return False
 
@@ -55,8 +56,8 @@ def get_func_children(func, func_proj_path, func_by_wrapper={}, neighbor_funcs=[
   return funcs
 
 def get_function_hash(func, func_by_wrapper={}):
-  func_dir_path = get_function_dir(func)
-  func_proj_path = get_func_proj_path(func_dir_path)
+  func_dir_path = get_function_dir_path(func)
+  func_proj_path = get_function_project_dir_path(func_dir_path)
   funcs = [func] + get_func_children(func, func_proj_path, func_by_wrapper)
   function_bodies = raypipe.map(get_function_body).compute(funcs)
   function_bodies_hash = hashing.hash(function_bodies)
