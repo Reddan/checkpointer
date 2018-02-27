@@ -12,7 +12,8 @@ initialized_storages = set()
 
 def init_storage(storage):
   if storage not in initialized_storages:
-    storage.initialize()
+    if hasattr(storage, 'initialize'):
+      storage.initialize()
     initialized_storages.add(storage)
 
 def log(color, title, invoke_level, name):

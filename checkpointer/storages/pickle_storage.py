@@ -4,9 +4,6 @@ from relib import imports
 from datetime import datetime
 from ..env import storage_dir
 
-def initialize():
-  pass
-
 def get_collection_timestamp(path):
   full_path = storage_dir + path
   with open(full_path + '_meta.pkl', 'rb') as file:

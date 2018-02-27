@@ -4,9 +4,6 @@ from relib import imports
 from datetime import datetime
 from ..env import storage_dir
 
-def initialize():
-  pass
-
 def get_collection_timestamp(path):
   full_path = storage_dir + path
   meta_data = bcolz.open(full_path + '_meta')[:][0]
@@ -33,7 +30,7 @@ def store_data(path, data, expire_in=None):
   created = datetime.now()
   is_tuple = isinstance(data, tuple)
   is_dict = isinstance(data, dict)
-  is_not_list = type(data) == str or not hasattr(data, '__len__')
+  is_not_list = is_tuple or is_dict or isinstance(data, str) or not hasattr(data, '__len__')
   if is_tuple:
     fields = list(range(len(data)))
   elif is_dict:

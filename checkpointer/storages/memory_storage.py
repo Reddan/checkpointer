@@ -3,9 +3,6 @@ from datetime import datetime
 store = {}
 date_stored = {}
 
-def initialize():
-  pass
-
 def get_is_expired(path):
   return path not in store
 

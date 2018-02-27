@@ -1,14 +1,11 @@
 import os
 from datetime import datetime
 from ..env import mongo_url, mongo_db
-try:
-  import pymongo
-except ImportError:
-  pass
 
 mongo, meta_store = None, None
 
 def initialize():
+  import pymongo
   global mongo, meta_store
   mongo = pymongo.MongoClient(mongo_url, connect=False)[mongo_db]
   meta_store = mongo.meta_store
