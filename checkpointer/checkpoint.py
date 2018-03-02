@@ -21,14 +21,12 @@ def checkpoint(opt_func=None, format='pickle', path=None, should_expire=None):
     function_hash = get_function_hash(func, func_by_wrapper)
 
     def wrapper(*args, recheck=False, **kwargs):
-      def run():
-        return func(*args, **kwargs)
-
+      compute = lambda: func(*args, **kwargs)
       global invoke_level
       invoke_level += 1
       invoke_path = get_invoke_path(func, function_hash, args, kwargs, path)
       try:
-        return storage.store_on_demand(run, invoke_path, format, recheck, should_expire, invoke_level)
+        return storage.store_on_demand(compute, invoke_path, format, recheck, should_expire, invoke_level)
       except:
         raise
       finally:

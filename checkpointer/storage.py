@@ -10,22 +10,23 @@ storages = {
 
 initialized_storages = set()
 
-def init_storage(storage):
-  if storage not in initialized_storages:
-    if hasattr(storage, 'initialize'):
-      storage.initialize()
-    initialized_storages.add(storage)
-
 def log(color, title, invoke_level, name):
   title_log = colored(title, 'grey', 'on_' + color)
   invoke_level_log = (' ' * min(1, invoke_level)) + ('──' * invoke_level)
   rest_log = colored(invoke_level_log + ' ' + name, color)
   print(title_log + rest_log)
 
-def store_on_demand(func, name, storage='pickle', force=False, should_expire=None, invoke_level=0):
+def get_storage(storage):
   if type(storage) == str:
     storage = storages[storage]
-  init_storage(storage)
+  if storage not in initialized_storages:
+    if hasattr(storage, 'initialize'):
+      storage.initialize()
+    initialized_storages.add(storage)
+  return storage
+
+def store_on_demand(func, name, storage='pickle', force=False, should_expire=None, invoke_level=0):
+  storage = get_storage(storage)
   do_print = storage != memory_storage
   refresh = force or storage.get_is_expired(name) or (should_expire and storage.should_expire(name, should_expire))
 
@@ -41,12 +42,10 @@ def store_on_demand(func, name, storage='pickle', force=False, should_expire=Non
     except (EOFError, FileNotFoundError):
       storage.delete_data(name)
       print(name + ' corrupt, removing')
-      return store_on_demand(func, name, storage, should_expire, invoke_level)
+      return store_on_demand(func, name, storage, force, should_expire, invoke_level)
 
 def read_from_store(name, storage='pickle'):
-  if type(storage) == str:
-    storage = storages[storage]
-  init_storage(storage)
+  storage = get_storage(storage)
   try:
     return storage.load_data(name)
   except:

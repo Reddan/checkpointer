@@ -7,7 +7,8 @@ def get_function_dir_path(func):
   return os.path.dirname(os.path.abspath(func.__code__.co_filename))
 
 def get_function_project_dir_path(func_dir_path):
-  return imports.find_parent_dir_containing(func_dir_path, '.git') or imports.find_parent_dir_containing(func_dir_path, '__init__.py') or os.getcwd()
+  return imports.find_parent_dir_containing(func_dir_path, '.git') \
+    or imports.find_parent_dir_containing(func_dir_path, '__init__.py') or os.getcwd()
 
 def get_function_body(func):
   # TODO: Strip comments
@@ -15,7 +16,6 @@ def get_function_body(func):
   lines = [line.rstrip() for line in lines]
   lines = [line for line in lines if line]
   return '\n'.join(lines)
-
 
 def get_code_children(__code__):
   return raypipe \
