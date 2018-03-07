@@ -20,7 +20,10 @@ def checkpoint(opt_func=None, format='pickle', path=None, should_expire=None):
   def receive_func(func):
     function_hash = get_function_hash(func, func_by_wrapper)
 
-    def wrapper(*args, recheck=False, **kwargs):
+    def wrapper(*args, **kwargs):
+      recheck = 'recheck' in kwargs and kwargs['recheck']
+      if 'recheck' in kwargs:
+        del kwargs['recheck']
       compute = lambda: func(*args, **kwargs)
       global invoke_level
       invoke_level += 1
