@@ -8,7 +8,8 @@ def get_function_dir_path(func):
 
 def get_function_project_dir_path(func_dir_path):
   return imports.find_parent_dir_containing(func_dir_path, '.git') \
-    or imports.find_parent_dir_containing(func_dir_path, '__init__.py') or os.getcwd()
+    or imports.find_parent_dir_containing(func_dir_path, '__init__.py') \
+    or os.getcwd()
 
 def get_function_body(func):
   # TODO: Strip comments
@@ -48,7 +49,9 @@ def get_func_children(func, func_proj_path, func_by_wrapper={}, neighbor_funcs=[
     .compute(code_children)
 
   funcs = raypipe \
-    .flat_map(lambda child_func: get_func_children(child_func, func_proj_path, func_by_wrapper, func_children)) \
+    .flat_map(lambda child_func: \
+      get_func_children(child_func, func_proj_path, func_by_wrapper, func_children)
+    ) \
     .do(lambda grand_children: [func] + grand_children) \
     .sort_distinct(lambda func: func.__name__) \
     .compute(func_children)

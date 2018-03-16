@@ -26,12 +26,10 @@ def checkpoint(opt_func=None, format='pickle', path=None, should_expire=None):
         del kwargs['recheck']
       compute = lambda: func(*args, **kwargs)
       global invoke_level
-      invoke_level += 1
       invoke_path = get_invoke_path(func, function_hash, args, kwargs, path)
       try:
+        invoke_level += 1
         return storage.store_on_demand(compute, invoke_path, format, recheck, should_expire, invoke_level)
-      except:
-        raise
       finally:
         invoke_level -= 1
 
