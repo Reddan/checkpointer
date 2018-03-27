@@ -39,6 +39,14 @@ class PickleableTf:
       saver = tf.train.Saver()
 
       with tf.Session() as sess:
+        bytes = self.bytes
+
+        def save():
+          nonlocal bytes
+          bytes = DirectoryBytesIO(lambda tmp_directory: \
+            saver.save(sess, tmp_directory + ckpt_file_name)
+          )
+
         if self.bytes:
           self.bytes.unpack(lambda tmp_directory: \
             saver.restore(sess, tmp_directory + ckpt_file_name)
@@ -47,9 +55,6 @@ class PickleableTf:
           init_op = tf.global_variables_initializer()
           sess.run(init_op)
 
-        result = model_funcs[func_name](sess, *args, **kwargs)
-        bytes = DirectoryBytesIO(lambda tmp_directory: \
-          saver.save(sess, tmp_directory + ckpt_file_name)
-        )
+        result = model_funcs[func_name](sess, save, *args, **kwargs)
         model = PickleableTf(self.get_model_funcs, self.model_funcs_names, bytes)
         return model, result
