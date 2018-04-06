@@ -16,8 +16,10 @@ def get_invoke_path(func, function_hash, args, kwargs, path):
     name = func.__name__
     return file_name + '/' + name + '/' + hash
 
-def checkpoint(opt_func=None, format='pickle', path=None, should_expire=None):
+def checkpoint(opt_func=None, format='pickle', path=None, should_expire=None, when=True):
   def receive_func(func):
+    if not when:
+      return func
     function_hash = get_function_hash(func, func_by_wrapper)
 
     def wrapper(*args, **kwargs):
