@@ -9,14 +9,23 @@ def ensure_list(val):
     return [val]
 
 class PickleableTf:
-  def __init__(self, get_model_funcs, model_funcs_names=None, bytes=None):
+  def __init__(self, get_model_funcs, *args, **kwargs):
+    model_funcs_names = kwargs.get('model_funcs_names', None)
+    bytes = kwargs.get('bytes', None)
+
+    if 'model_funcs_names' in kwargs:
+      del kwargs['model_funcs_names']
+      del kwargs['bytes']
+
     if model_funcs_names == None:
       import tensorflow as tf
 
       with tf.Graph().as_default():
-        model_funcs = ensure_list(get_model_funcs())
+        model_funcs = ensure_list(get_model_funcs(*args, **kwargs))
         model_funcs_names = [func.__name__ for func in model_funcs]
 
+    self.args = args
+    self.kwargs = kwargs
     self.model_funcs_names = model_funcs_names
     self.get_model_funcs = get_model_funcs
     self.get_model_funcs_hash = get_function_hash(get_model_funcs)
@@ -32,7 +41,7 @@ class PickleableTf:
     with tf.Graph().as_default():
       model_funcs = {
         func.__name__: func
-        for func in ensure_list(self.get_model_funcs())
+        for func in ensure_list(self.get_model_funcs(*self.args, **self.kwargs))
       }
 
       ckpt_file_name = 'tf.ckpt'
@@ -56,5 +65,11 @@ class PickleableTf:
           sess.run(init_op)
 
         result = model_funcs[func_name](sess, save, *args, **kwargs)
-        model = PickleableTf(self.get_model_funcs, self.model_funcs_names, bytes)
+        model = PickleableTf(
+          self.get_model_funcs,
+          *self.args,
+          **self.kwargs,
+          model_funcs_names=self.model_funcs_names,
+          bytes=bytes
+        )
         return model, result
