@@ -1,2 +1,4 @@
 *.pyc
 checkpointer.egg-info/
+/dist
+/build
