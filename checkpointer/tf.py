@@ -1,6 +1,6 @@
 from functools import partial
 from relib import DirectoryBytesIO
-from .function_body import get_function_hash
+from checkpointer import get_function_hash
 
 def ensure_list(val):
   if isinstance(val, (tuple, list)):
