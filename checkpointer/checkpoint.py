@@ -20,8 +20,8 @@ def checkpoint(opt_func=None, format='pickle', path=None, should_expire=None, wh
   def receive_func(func):
     if not when:
       return func
-    unwrapped_fuck = func_by_wrapper.get(func, func)
-    function_hash = get_function_hash(unwrapped_fuck, func_by_wrapper)
+    unwrapped_func = func_by_wrapper.get(func, func)
+    function_hash = get_function_hash(unwrapped_func, func_by_wrapper)
 
     def wrapper(*args, **kwargs):
       recheck = 'recheck' in kwargs and kwargs['recheck']
@@ -29,15 +29,15 @@ def checkpoint(opt_func=None, format='pickle', path=None, should_expire=None, wh
         del kwargs['recheck']
       compute = lambda: func(*args, **kwargs)
       global invoke_level
-      invoke_path = get_invoke_path(unwrapped_fuck, function_hash, args, kwargs, path)
+      invoke_path = get_invoke_path(unwrapped_func, function_hash, args, kwargs, path)
       try:
         invoke_level += 1
         return storage.store_on_demand(compute, invoke_path, format, recheck, should_expire, invoke_level)
       finally:
         invoke_level -= 1
 
-    wrapper.__name__ = unwrapped_fuck.__name__ + '_wrapper'
-    func_by_wrapper[wrapper] = unwrapped_fuck
+    wrapper.__name__ = unwrapped_func.__name__ + '_wrapper'
+    func_by_wrapper[wrapper] = unwrapped_func
     return wrapper
 
   return receive_func(opt_func) if callable(opt_func) else receive_func
