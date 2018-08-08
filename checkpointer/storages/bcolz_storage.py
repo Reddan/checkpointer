@@ -4,6 +4,18 @@ from relib import imports
 from datetime import datetime
 from ..env import storage_dir
 
+def get_data_type_str(x):
+  if isinstance(x, tuple):
+    return 'tuple'
+  elif isinstance(x, dict):
+    return 'dict'
+  elif isinstance(x, list):
+    return 'list'
+  elif isinstance(x, str) or not hasattr(x, '__len__'):
+    return 'other'
+  else:
+    return 'ndarray'
+
 def get_collection_timestamp(path):
   full_path = storage_dir + path
   meta_data = bcolz.open(full_path + '_meta')[:][0]
@@ -28,18 +40,16 @@ def store_data(path, data, expire_in=None):
   full_dir = '/'.join(full_path.split('/')[:-1])
   imports.ensure_dir(full_dir)
   created = datetime.now()
-  is_tuple = isinstance(data, tuple)
-  is_dict = isinstance(data, dict)
-  is_not_list = is_tuple or is_dict or isinstance(data, str) or not hasattr(data, '__len__')
-  if is_tuple:
+  data_type_str = get_data_type_str(data)
+  if data_type_str == 'tuple':
     fields = list(range(len(data)))
-  elif is_dict:
+  elif data_type_str == 'dict':
     fields = sorted(data.keys())
   else:
     fields = []
-  meta_data = {'created': created, 'is_tuple': is_tuple, 'is_dict': is_dict, 'is_not_list': is_not_list, 'fields': fields}
+  meta_data = {'created': created, 'data_type_str': data_type_str, 'fields': fields}
   insert_data(full_path + '_meta', meta_data)
-  if is_tuple or is_dict:
+  if data_type_str in ['tuple', 'dict']:
     for i in range(len(fields)):
       sub_path = path + ' (' + str(i) + ')'
       store_data(sub_path, data[fields[i]])
@@ -50,18 +60,23 @@ def store_data(path, data, expire_in=None):
 def load_data(path):
   full_path = storage_dir + path
   meta_data = bcolz.open(full_path + '_meta')[:][0]
-  if meta_data['is_tuple'] or meta_data['is_dict']:
+  data_type_str = meta_data['data_type_str']
+  if data_type_str in ['tuple', 'dict']:
     fields = meta_data['fields']
     partitions = range(len(fields))
     data = [load_data(path + ' (' + str(i) + ')') for i in partitions]
-    if meta_data['is_tuple']:
+    if data_type_str == 'tuple':
       return tuple(data)
     else:
       return dict(zip(fields, data))
-  elif meta_data['is_not_list']:
-    return bcolz.open(full_path)[0]
   else:
-    return bcolz.open(full_path)[:]
+    data = bcolz.open(full_path)
+    if data_type_str == 'list':
+      return list(data)
+    elif data_type_str == 'other':
+      return data[0]
+    else:
+      return data[:]
 
 def delete_data(path):
   full_path = storage_dir + path
