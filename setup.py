@@ -11,7 +11,6 @@ setup(
   install_requires=[
     'relib',
     'numpy',
-    'bcolz',
     'termcolor'
   ],
   python_requires='~=3.5',
