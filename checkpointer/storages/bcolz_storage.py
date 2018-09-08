@@ -1,4 +1,3 @@
-import bcolz
 import shutil
 from relib import imports
 from datetime import datetime
@@ -17,6 +16,7 @@ def get_data_type_str(x):
     return 'ndarray'
 
 def get_collection_timestamp(path):
+  import bcolz
   full_path = storage_dir + path
   meta_data = bcolz.open(full_path + '_meta')[:][0]
   return meta_data['created']
@@ -32,6 +32,7 @@ def should_expire(path, expire_fn):
   return expire_fn(get_collection_timestamp(path))
 
 def insert_data(path, data):
+  import bcolz
   c = bcolz.carray(data, rootdir=path, mode='w')
   c.flush()
 
@@ -58,6 +59,7 @@ def store_data(path, data, expire_in=None):
   return data
 
 def load_data(path):
+  import bcolz
   full_path = storage_dir + path
   meta_data = bcolz.open(full_path + '_meta')[:][0]
   data_type_str = meta_data['data_type_str']
