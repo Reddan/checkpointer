@@ -1,5 +1,6 @@
-from .storages import memory_storage, pickle_storage, bcolz_storage, mongo_storage
 from termcolor import colored
+from .env import verbosity
+from .storages import memory_storage, pickle_storage, bcolz_storage, mongo_storage
 
 storages = {
   'memory': memory_storage,
@@ -27,8 +28,10 @@ def get_storage(storage):
 
 def store_on_demand(func, name, storage='pickle', force=False, should_expire=None, invoke_level=0):
   storage = get_storage(storage)
-  do_print = storage != memory_storage
-  refresh = force or storage.get_is_expired(name) or (should_expire and storage.should_expire(name, should_expire))
+  do_print = storage != memory_storage and verbosity != 'QUIET'
+  refresh = force \
+    or storage.get_is_expired(name) \
+    or (should_expire and storage.should_expire(name, should_expire))
 
   if refresh:
     if do_print: log('blue', ' MEMORIZING ', invoke_level, name)
