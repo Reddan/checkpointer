@@ -1,12 +1,11 @@
 from termcolor import colored
 from .env import verbosity
-from .storages import memory_storage, pickle_storage, bcolz_storage, mongo_storage
+from .storages import memory_storage, pickle_storage, bcolz_storage
 
 storages = {
   'memory': memory_storage,
   'pickle': pickle_storage,
   'bcolz': bcolz_storage,
-  'mongo': mongo_storage
 }
 
 initialized_storages = set()
