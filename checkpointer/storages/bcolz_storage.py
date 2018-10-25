@@ -1,7 +1,6 @@
 import shutil
 from relib import imports
 from datetime import datetime
-from ..env import storage_dir
 
 def get_data_type_str(x):
   if isinstance(x, tuple):
@@ -15,29 +14,29 @@ def get_data_type_str(x):
   else:
     return 'ndarray'
 
-def get_collection_timestamp(path):
+def get_collection_timestamp(config, path):
   import bcolz
-  full_path = storage_dir + path
+  full_path = config.dir + path
   meta_data = bcolz.open(full_path + '_meta')[:][0]
   return meta_data['created']
 
-def get_is_expired(path):
+def get_is_expired(config, path):
   try:
-    get_collection_timestamp(path)
+    get_collection_timestamp(config, path)
     return False
   except:
     return True
 
-def should_expire(path, expire_fn):
-  return expire_fn(get_collection_timestamp(path))
+def should_expire(config, path, expire_fn):
+  return expire_fn(get_collection_timestamp(config, path))
 
 def insert_data(path, data):
   import bcolz
   c = bcolz.carray(data, rootdir=path, mode='w')
   c.flush()
 
-def store_data(path, data, expire_in=None):
-  full_path = storage_dir + path
+def store_data(config, path, data, expire_in=None):
+  full_path = config.dir + path
   full_dir = '/'.join(full_path.split('/')[:-1])
   imports.ensure_dir(full_dir)
   created = datetime.now()
@@ -53,20 +52,20 @@ def store_data(path, data, expire_in=None):
   if data_type_str in ['tuple', 'dict']:
     for i in range(len(fields)):
       sub_path = path + ' (' + str(i) + ')'
-      store_data(sub_path, data[fields[i]])
+      store_data(config, sub_path, data[fields[i]])
   else:
     insert_data(full_path, data)
   return data
 
-def load_data(path):
+def load_data(config, path):
   import bcolz
-  full_path = storage_dir + path
+  full_path = config.dir + path
   meta_data = bcolz.open(full_path + '_meta')[:][0]
   data_type_str = meta_data['data_type_str']
   if data_type_str in ['tuple', 'dict']:
     fields = meta_data['fields']
     partitions = range(len(fields))
-    data = [load_data(path + ' (' + str(i) + ')') for i in partitions]
+    data = [load_data(config, path + ' (' + str(i) + ')') for i in partitions]
     if data_type_str == 'tuple':
       return tuple(data)
     else:
@@ -80,8 +79,8 @@ def load_data(path):
     else:
       return data[:]
 
-def delete_data(path):
-  full_path = storage_dir + path
+def delete_data(config, path):
+  full_path = config.dir + path
   try:
     shutil.rmtree(full_path + '_meta')
     shutil.rmtree(full_path)

@@ -1,5 +1,4 @@
 from termcolor import colored
-from .env import verbosity
 from .storages import memory_storage, pickle_storage, bcolz_storage
 
 storages = {
@@ -9,6 +8,7 @@ storages = {
 }
 
 initialized_storages = set()
+invoke_level = {'val': -1}
 
 def log(color, title, invoke_level, name):
   title_log = colored(title, 'grey', 'on_' + color)
@@ -25,26 +25,30 @@ def get_storage(storage):
     initialized_storages.add(storage)
   return storage
 
-def store_on_demand(func, name, storage='pickle', force=False, should_expire=None, invoke_level=0):
-  storage = get_storage(storage)
-  do_print = storage != memory_storage and verbosity != 'QUIET'
-  refresh = force \
-    or storage.get_is_expired(name) \
-    or (should_expire and storage.should_expire(name, should_expire))
+def store_on_demand(func, name, config, storage='pickle', force=False, should_expire=None):
+  try:
+    invoke_level['val'] += 1
+    storage = get_storage(storage)
+    do_print = storage != memory_storage and config.verbosity != 0
+    refresh = force \
+      or storage.get_is_expired(config, name) \
+      or (should_expire and storage.should_expire(config, name, should_expire))
 
-  if refresh:
-    if do_print: log('blue', ' MEMORIZING ', invoke_level, name)
-    data = func()
-    return storage.store_data(name, data)
-  else:
-    try:
-      data = storage.load_data(name)
-      if do_print: log('green', ' REMEMBERED ', invoke_level, name)
-      return data
-    except (EOFError, FileNotFoundError):
-      storage.delete_data(name)
-      print(name + ' corrupt, removing')
-      return store_on_demand(func, name, storage, force, should_expire, invoke_level)
+    if refresh:
+      if do_print: log('blue', ' MEMORIZING ', invoke_level['val'], name)
+      data = func()
+      return storage.store_data(config, name, data)
+    else:
+      try:
+        data = storage.load_data(config, name)
+        if do_print: log('green', ' REMEMBERED ', invoke_level['val'], name)
+        return data
+      except (EOFError, FileNotFoundError):
+        storage.delete_data(config, name)
+        print(name + ' corrupt, removing')
+        return store_on_demand(func, name, storage, force, should_expire, invoke_level['val'])
+  finally:
+    invoke_level['val'] -= 1
 
 def read_from_store(name, storage='pickle'):
   storage = get_storage(storage)
