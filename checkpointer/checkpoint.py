@@ -1,3 +1,6 @@
+# Watchdog can be used to listen for changes on metadata files
+# https://pythonhosted.org/watchdog/
+
 from collections import namedtuple
 from pathlib import Path
 from relib import hashing
@@ -21,7 +24,7 @@ def get_invoke_path(func, function_hash, args, kwargs, path):
 def create_checkpointer_from_config(config):
   def checkpoint(opt_func=None, format='pickle', path=None, should_expire=None, when=True):
     def receive_func(func):
-      if not when:
+      if not (config.when and when):
         return func
 
       unwrapped_func = func_by_wrapper.get(func, func)
@@ -45,9 +48,9 @@ def create_checkpointer_from_config(config):
 
   return checkpoint
 
-def create_checkpointer(dir=default_dir, verbosity=1):
-  Config = namedtuple('Config', 'dir verbosity')
-  config = Config(dir + '/', verbosity)
+def create_checkpointer(dir=default_dir, when=True, verbosity=1):
+  Config = namedtuple('Config', 'dir when verbosity')
+  config = Config(dir + '/', when, verbosity)
   return create_checkpointer_from_config(config)
 
 def read_only(wrapper_func, format='pickle', path=None):
