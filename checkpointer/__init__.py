@@ -7,4 +7,4 @@ from .function_body import get_function_hash, get_function_dir_path, get_functio
 storage_dir = os.environ.get('CHECKPOINTS_DIR', default_dir)
 verbosity = int(os.environ.get('CHECKPOINTS_VERBOSITY', '1'))
 
-checkpoint = create_checkpointer(storage_dir, verbosity)
+checkpoint = create_checkpointer(dir=storage_dir, verbosity=verbosity)
