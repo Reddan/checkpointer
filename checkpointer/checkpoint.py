@@ -49,8 +49,10 @@ def create_checkpointer_from_config(config):
   return checkpoint
 
 def create_checkpointer(dir=default_dir, when=True, verbosity=1):
-  Config = namedtuple('Config', 'dir when verbosity')
-  config = Config(dir + '/', when, verbosity)
+  dir = dir + '/'
+  opts = locals()
+  CheckpointerConfig = namedtuple('CheckpointerConfig', sorted(opts))
+  config = CheckpointerConfig(**opts)
   return create_checkpointer_from_config(config)
 
 def read_only(wrapper_func, format='pickle', path=None):
