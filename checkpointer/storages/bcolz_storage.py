@@ -1,6 +1,6 @@
 import shutil
-from relib import imports
 from datetime import datetime
+from ..utils import ensure_dir
 
 def get_data_type_str(x):
   if isinstance(x, tuple):
@@ -38,7 +38,7 @@ def insert_data(path, data):
 def store_data(config, path, data, expire_in=None):
   full_path = config.dir + path
   full_dir = '/'.join(full_path.split('/')[:-1])
-  imports.ensure_dir(full_dir)
+  ensure_dir(full_dir)
   created = datetime.now()
   data_type_str = get_data_type_str(data)
   if data_type_str == 'tuple':
