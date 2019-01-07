@@ -46,7 +46,7 @@ def store_on_demand(func, name, config, storage='pickle', force=False, should_ex
       except (EOFError, FileNotFoundError):
         storage.delete_data(config, name)
         print(name + ' corrupt, removing')
-        return store_on_demand(func, name, storage, force, should_expire, invoke_level['val'])
+        return store_on_demand(func, name, config, storage, force, should_expire)
   finally:
     invoke_level['val'] -= 1
 

@@ -3,7 +3,7 @@
 
 from collections import namedtuple
 from pathlib import Path
-from relib import hashing
+import relib.hashing as hashing
 from . import storage
 from .function_body import get_function_hash
 from functools import wraps
@@ -33,10 +33,11 @@ def create_checkpointer_from_config(config):
 
       @wraps(func)
       def wrapper(*args, **kwargs):
-        recheck = 'recheck' in kwargs and kwargs['recheck']
-
         if 'recheck' in kwargs:
+          recheck = kwargs['recheck']
           del kwargs['recheck']
+        else:
+          recheck = False
 
         compute = lambda: func(*args, **kwargs)
         invoke_path = get_invoke_path(unwrapped_func, function_hash, args, kwargs, path)
