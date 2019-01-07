@@ -6,6 +6,7 @@ from pathlib import Path
 from relib import hashing
 from . import storage
 from .function_body import get_function_hash
+from functools import wraps
 
 func_by_wrapper = {}
 default_dir = str(Path.home()) + '/.checkpoints'
@@ -30,6 +31,7 @@ def create_checkpointer_from_config(config):
       unwrapped_func = func_by_wrapper.get(func, func)
       function_hash = get_function_hash(unwrapped_func, func_by_wrapper)
 
+      @wraps(func)
       def wrapper(*args, **kwargs):
         recheck = 'recheck' in kwargs and kwargs['recheck']
 
