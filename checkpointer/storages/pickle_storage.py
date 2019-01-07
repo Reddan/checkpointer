@@ -1,7 +1,7 @@
 import os
 import pickle
-from relib import imports
 from datetime import datetime
+from ..utils import ensure_dir
 
 def get_collection_timestamp(config, path):
   full_path = config.dir + path
@@ -24,7 +24,7 @@ def store_data(config, path, data):
   meta_data = {'created': created}
   full_path = config.dir + path
   full_dir = '/'.join(full_path.split('/')[:-1])
-  imports.ensure_dir(full_dir)
+  ensure_dir(full_dir)
   with open(full_path + '.pkl', 'wb') as file:
     pickle.dump(data, file, -1)
   with open(full_path + '_meta.pkl', 'wb') as file:
