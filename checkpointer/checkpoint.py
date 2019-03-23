@@ -7,7 +7,7 @@ import relib.hashing as hashing
 from . import storage
 from .function_body import get_function_hash
 from functools import wraps
-from utils import unwrap_func
+from .utils import unwrap_func
 
 default_dir = str(Path.home()) + '/.checkpoints'
 
