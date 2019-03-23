@@ -1,12 +1,14 @@
-import os
 import inspect
 from types import FunctionType, CodeType
 from relib.raypipe import raypipe
 import relib.hashing as hashing
 from pathlib import Path
-from utils import unwrap_func
+from .utils import unwrap_func
 
-cwd = Path(os.getcwd())
+cwd = Path.cwd()
+
+def get_func_path(func):
+  return Path(inspect.getfile(func)).absolute()
 
 def get_function_body(func):
   # TODO: Strip comments
@@ -30,7 +32,7 @@ def get_func_children(func, neighbor_funcs=[]):
   def clear_candidate(candidate_func):
     return isinstance(candidate_func, FunctionType) \
       and candidate_func not in neighbor_funcs \
-      and cwd in Path(inspect.getfile(candidate_func)).parents
+      and cwd in get_func_path(candidate_func).parents
 
   code_children = get_code_children(func.__code__)
 
