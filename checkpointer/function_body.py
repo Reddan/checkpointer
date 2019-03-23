@@ -4,6 +4,7 @@ from types import FunctionType, CodeType
 from relib.raypipe import raypipe
 import relib.hashing as hashing
 from pathlib import Path
+from utils import unwrap_func
 
 cwd = Path(os.getcwd())
 
@@ -21,14 +22,10 @@ def get_code_children(__code__):
     .do(lambda children: list(__code__.co_names) + children) \
     .compute(__code__.co_consts)
 
-def get_func_children(func, func_by_wrapper={}, neighbor_funcs=[]):
+def get_func_children(func, neighbor_funcs=[]):
   def get_candidate_func(co_name):
-    try:
-      candidate_func = func.__globals__.get(co_name, None)
-      return func_by_wrapper.get(candidate_func, candidate_func)
-    except TypeError:
-      # non hashable datatype
-      return None
+    candidate_func = func.__globals__.get(co_name, None)
+    return unwrap_func(candidate_func)
 
   def clear_candidate(candidate_func):
     return isinstance(candidate_func, FunctionType) \
@@ -44,7 +41,7 @@ def get_func_children(func, func_by_wrapper={}, neighbor_funcs=[]):
 
   funcs = raypipe \
     .flat_map(lambda child_func: \
-      get_func_children(child_func, func_by_wrapper, func_children)
+      get_func_children(child_func, func_children)
     ) \
     .do(lambda grand_children: [func] + grand_children) \
     .sort_distinct(lambda func: func.__name__) \
@@ -52,8 +49,8 @@ def get_func_children(func, func_by_wrapper={}, neighbor_funcs=[]):
 
   return funcs
 
-def get_function_hash(func, func_by_wrapper={}):
-  funcs = [func] + get_func_children(func, func_by_wrapper)
+def get_function_hash(func):
+  funcs = [func] + get_func_children(func)
   function_bodies = raypipe.map(get_function_body).compute(funcs)
   function_bodies_hash = hashing.hash(function_bodies)
   return function_bodies_hash
