@@ -50,9 +50,9 @@ def store_on_demand(func, name, config, storage='pickle', force=False, should_ex
   finally:
     invoke_level['val'] -= 1
 
-def read_from_store(name, storage='pickle'):
+def read_from_store(name, config, storage='pickle'):
   storage = get_storage(storage)
   try:
-    return storage.load_data(name)
+    return storage.load_data(config, name)
   except:
     return None
