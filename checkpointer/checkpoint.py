@@ -18,7 +18,7 @@ def get_invoke_path(func, function_hash, args, kwargs, path):
     return path(*args, **kwargs)
   else:
     hash = hashing.hash([function_hash, args, kwargs or 0])
-    file_name = func.__code__.co_filename.split('/')[-1]
+    file_name = Path(func.__code__.co_filename).name
     name = func.__name__
     return file_name + '/' + name + '/' + hash
 
