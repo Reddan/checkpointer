@@ -1,6 +1,5 @@
-# Watchdog can be used to listen for changes on metadata files
-# https://pythonhosted.org/watchdog/
-
+import inspect
+import asyncio
 from collections import namedtuple
 from pathlib import Path
 import relib.hashing as hashing
@@ -28,22 +27,33 @@ def create_checkpointer_from_config(config):
       if not (config.when and when):
         return func
 
+      config_ = config._replace(format=format)
+      is_async = inspect.iscoroutinefunction(func)
       unwrapped_func = unwrap_func(func)
       function_hash = get_function_hash(unwrapped_func)
 
       @wraps(unwrapped_func)
-      def wrapper(*args, **kwargs):
-        if 'recheck' in kwargs:
-          recheck = kwargs['recheck']
-          del kwargs['recheck']
-        else:
-          recheck = False
+      async def wrapper(*args, **kwargs):
+        async def get_data():
+          if is_async:
+            return await func(*args, **kwargs)
+          else:
+            return func(*args, **kwargs)
 
-        compute = lambda: func(*args, **kwargs)
+        recheck = kwargs.pop('recheck', False)
         invoke_path = get_invoke_path(unwrapped_func, function_hash, args, kwargs, path)
-        return storage.store_on_demand(compute, invoke_path, config, format, recheck, should_expire)
+        return await storage.store_on_demand(get_data, invoke_path, config_, recheck, should_expire)
 
-      # wrapper.__name__ = unwrapped_func.__name__ + '_wrapper'
+      wrapper.checkpoint_config = config_
+
+      if is_async == False:
+        def sync_wrapper(*args, **kwargs):
+          return asyncio.get_event_loop().run_until_complete(wrapper(*args, **kwargs))
+
+        sync_wrapper.checkpoint_config = config_
+
+        return sync_wrapper
+
       return wrapper
 
     return receive_func(opt_func) if callable(opt_func) else receive_func
