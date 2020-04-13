@@ -1,14 +1,13 @@
 import inspect
-import asyncio
 from collections import namedtuple
 from pathlib import Path
+from functools import wraps
 import relib.hashing as hashing
 from . import storage
 from .function_body import get_function_hash
-from functools import wraps
-from .utils import unwrap_func
+from .utils import unwrap_func, sync_resolve_coroutine
 
-default_dir = str(Path.home()) + '/.checkpoints'
+default_dir = Path.home() / '.checkpoints'
 
 def get_invoke_path(func, function_hash, args, kwargs, path):
   if type(path) == str:
@@ -37,7 +36,11 @@ def create_checkpointer_from_config(config):
         compute = lambda: func(*args, **kwargs)
         recheck = kwargs.pop('recheck', False)
         invoke_path = get_invoke_path(unwrapped_func, function_hash, args, kwargs, path)
-        return storage.store_on_demand(compute, invoke_path, config_, is_async, recheck, should_expire)
+        coroutine = storage.store_on_demand(compute, invoke_path, config_, recheck, should_expire)
+        if is_async:
+          return coroutine
+        else:
+          return sync_resolve_coroutine(coroutine)
 
       wrapper.checkpoint_config = config_
 
@@ -48,7 +51,7 @@ def create_checkpointer_from_config(config):
   return checkpoint
 
 def create_checkpointer(format='pickle', dir=default_dir, when=True, verbosity=1):
-  dir = dir + '/'
+  dir = Path(dir)
   opts = locals()
   CheckpointerConfig = namedtuple('CheckpointerConfig', sorted(opts))
   config = CheckpointerConfig(**opts)
