@@ -1,13 +1,7 @@
-import os
-import errno
+from pathlib import Path
 
 def ensure_dir(directory):
-  if not os.path.exists(directory):
-    try:
-      os.makedirs(directory)
-    except OSError as e:
-      if e.errno != errno.EEXIST:
-        raise
+  Path(directory).mkdir(parents=True, exist_ok=True)
 
 def unwrap_func(func):
   if hasattr(func, '__wrapped__'):
