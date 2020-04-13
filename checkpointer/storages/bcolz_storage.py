@@ -1,6 +1,5 @@
 import shutil
 from datetime import datetime
-from ..utils import ensure_dir
 
 def get_data_type_str(x):
   if isinstance(x, tuple):
@@ -14,17 +13,22 @@ def get_data_type_str(x):
   else:
     return 'ndarray'
 
+def get_paths(checkpoint_dir, checkpoint_name):
+  full_path = checkpoint_dir / checkpoint_name
+  meta_full_path = checkpoint_dir / (checkpoint_name + '_meta')
+  return full_path, meta_full_path
+
 def get_collection_timestamp(config, path):
   import bcolz
-  full_path = config.dir + path
-  meta_data = bcolz.open(full_path + '_meta')[:][0]
+  _, meta_full_path = get_paths(config.dir, path)
+  meta_data = bcolz.open(meta_full_path)[:][0]
   return meta_data['created']
 
 def get_is_expired(config, path):
   try:
     get_collection_timestamp(config, path)
     return False
-  except:
+  except FileNotFoundError:
     return True
 
 def should_expire(config, path, expire_fn):
@@ -36,9 +40,8 @@ def insert_data(path, data):
   c.flush()
 
 def store_data(config, path, data, expire_in=None):
-  full_path = config.dir + path
-  full_dir = '/'.join(full_path.split('/')[:-1])
-  ensure_dir(full_dir)
+  full_path, meta_full_path = get_paths(config.dir, path)
+  full_path.parent.mkdir(parents=True, exist_ok=True)
   created = datetime.now()
   data_type_str = get_data_type_str(data)
   if data_type_str == 'tuple':
@@ -48,10 +51,10 @@ def store_data(config, path, data, expire_in=None):
   else:
     fields = []
   meta_data = {'created': created, 'data_type_str': data_type_str, 'fields': fields}
-  insert_data(full_path + '_meta', meta_data)
+  insert_data(meta_full_path, meta_data)
   if data_type_str in ['tuple', 'dict']:
     for i in range(len(fields)):
-      sub_path = path + ' (' + str(i) + ')'
+      sub_path = f"{path} ({i})"
       store_data(config, sub_path, data[fields[i]])
   else:
     insert_data(full_path, data)
@@ -59,13 +62,13 @@ def store_data(config, path, data, expire_in=None):
 
 def load_data(config, path):
   import bcolz
-  full_path = config.dir + path
-  meta_data = bcolz.open(full_path + '_meta')[:][0]
+  full_path, meta_full_path = get_paths(config.dir, path)
+  meta_data = bcolz.open(meta_full_path)[:][0]
   data_type_str = meta_data['data_type_str']
   if data_type_str in ['tuple', 'dict']:
     fields = meta_data['fields']
     partitions = range(len(fields))
-    data = [load_data(config, path + ' (' + str(i) + ')') for i in partitions]
+    data = [load_data(config, f"{path} ({i})") for i in partitions]
     if data_type_str == 'tuple':
       return tuple(data)
     else:
@@ -80,9 +83,9 @@ def load_data(config, path):
       return data[:]
 
 def delete_data(config, path):
-  full_path = config.dir + path
+  full_path, meta_full_path = get_paths(config.dir, path)
   try:
-    shutil.rmtree(full_path + '_meta')
+    shutil.rmtree(meta_full_path)
     shutil.rmtree(full_path)
   except FileNotFoundError:
     pass

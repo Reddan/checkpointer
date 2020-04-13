@@ -1,11 +1,14 @@
-import os
 import pickle
 from datetime import datetime
-from ..utils import ensure_dir
+
+def get_paths(checkpoint_dir, checkpoint_name):
+  meta_full_path = checkpoint_dir / (checkpoint_name + '_meta.pkl')
+  pkl_full_path = checkpoint_dir / (checkpoint_name + '.pkl')
+  return meta_full_path, pkl_full_path
 
 def get_collection_timestamp(config, path):
-  full_path = config.dir + path
-  with open(full_path + '_meta.pkl', 'rb') as file:
+  meta_full_path, pkl_full_path = get_paths(config.dir, path)
+  with meta_full_path.open('rb') as file:
     meta_data = pickle.load(file)
     return meta_data['created']
 
@@ -13,7 +16,7 @@ def get_is_expired(config, path):
   try:
     get_collection_timestamp(config, path)
     return False
-  except:
+  except FileNotFoundError:
     return True
 
 def should_expire(config, path, expire_fn):
@@ -22,24 +25,23 @@ def should_expire(config, path, expire_fn):
 def store_data(config, path, data):
   created = datetime.now()
   meta_data = {'created': created}
-  full_path = config.dir + path
-  full_dir = '/'.join(full_path.split('/')[:-1])
-  ensure_dir(full_dir)
-  with open(full_path + '.pkl', 'wb') as file:
+  meta_full_path, pkl_full_path = get_paths(config.dir, path)
+  pkl_full_path.parent.mkdir(parents=True, exist_ok=True)
+  with pkl_full_path.open('wb') as file:
     pickle.dump(data, file, -1)
-  with open(full_path + '_meta.pkl', 'wb') as file:
+  with meta_full_path.open('wb') as file:
     pickle.dump(meta_data, file, -1)
   return data
 
 def load_data(config, path):
-  full_path = config.dir + path
-  with open(full_path + '.pkl', 'rb') as file:
+  _, full_path = get_paths(config.dir, path)
+  with full_path.open('rb') as file:
     return pickle.load(file)
 
 def delete_data(config, path):
-  full_path = config.dir + path
+  meta_full_path, pkl_full_path = get_paths(config.dir, path)
   try:
-    os.remove(full_path + '_meta.pkl')
-    os.remove(full_path + '.pkl')
+    meta_full_path.unlink()
+    pkl_full_path.unlink()
   except FileNotFoundError:
     pass
