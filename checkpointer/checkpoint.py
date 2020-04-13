@@ -33,26 +33,13 @@ def create_checkpointer_from_config(config):
       function_hash = get_function_hash(unwrapped_func)
 
       @wraps(unwrapped_func)
-      async def wrapper(*args, **kwargs):
-        async def get_data():
-          if is_async:
-            return await func(*args, **kwargs)
-          else:
-            return func(*args, **kwargs)
-
+      def wrapper(*args, **kwargs):
+        compute = lambda: func(*args, **kwargs)
         recheck = kwargs.pop('recheck', False)
         invoke_path = get_invoke_path(unwrapped_func, function_hash, args, kwargs, path)
-        return await storage.store_on_demand(get_data, invoke_path, config_, recheck, should_expire)
+        return storage.store_on_demand(compute, invoke_path, config_, is_async, recheck, should_expire)
 
       wrapper.checkpoint_config = config_
-
-      if is_async == False:
-        def sync_wrapper(*args, **kwargs):
-          return asyncio.get_event_loop().run_until_complete(wrapper(*args, **kwargs))
-
-        sync_wrapper.checkpoint_config = config_
-
-        return sync_wrapper
 
       return wrapper
 
