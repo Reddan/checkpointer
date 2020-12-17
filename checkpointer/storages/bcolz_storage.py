@@ -1,4 +1,5 @@
 import shutil
+from pathlib import Path
 from datetime import datetime
 
 def get_data_type_str(x):
@@ -13,14 +14,14 @@ def get_data_type_str(x):
   else:
     return 'ndarray'
 
-def get_paths(checkpoint_dir, checkpoint_name):
-  full_path = checkpoint_dir / checkpoint_name
-  meta_full_path = checkpoint_dir / (checkpoint_name + '_meta')
+def get_paths(root_path, invoke_path):
+  full_path = Path(invoke_path) if root_path is None else root_path / invoke_path
+  meta_full_path = full_path.with_name(full_path.name + '_meta')
   return full_path, meta_full_path
 
 def get_collection_timestamp(config, path):
   import bcolz
-  _, meta_full_path = get_paths(config.dir, path)
+  _, meta_full_path = get_paths(config.root_path, path)
   meta_data = bcolz.open(meta_full_path)[:][0]
   return meta_data['created']
 
@@ -40,7 +41,7 @@ def insert_data(path, data):
   c.flush()
 
 def store_data(config, path, data, expire_in=None):
-  full_path, meta_full_path = get_paths(config.dir, path)
+  full_path, meta_full_path = get_paths(config.root_path, path)
   full_path.parent.mkdir(parents=True, exist_ok=True)
   created = datetime.now()
   data_type_str = get_data_type_str(data)
@@ -62,7 +63,7 @@ def store_data(config, path, data, expire_in=None):
 
 def load_data(config, path):
   import bcolz
-  full_path, meta_full_path = get_paths(config.dir, path)
+  full_path, meta_full_path = get_paths(config.root_path, path)
   meta_data = bcolz.open(meta_full_path)[:][0]
   data_type_str = meta_data['data_type_str']
   if data_type_str in ['tuple', 'dict']:
@@ -83,7 +84,7 @@ def load_data(config, path):
       return data[:]
 
 def delete_data(config, path):
-  full_path, meta_full_path = get_paths(config.dir, path)
+  full_path, meta_full_path = get_paths(config.root_path, path)
   try:
     shutil.rmtree(meta_full_path)
     shutil.rmtree(full_path)

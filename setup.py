@@ -3,7 +3,7 @@ from setuptools import setup
 setup(
   name='checkpointer',
   packages=['checkpointer', 'checkpointer.storages'],
-  version='0.6.1',
+  version='0.7.0',
   author='Hampus Hallman',
   author_email='me@hampushallman.com',
   url='https://github.com/Reddan/checkpointer',

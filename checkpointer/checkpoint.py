@@ -50,8 +50,8 @@ def create_checkpointer_from_config(config):
 
   return checkpoint
 
-def create_checkpointer(format='pickle', dir=default_dir, when=True, verbosity=1):
-  dir = Path(dir)
+def create_checkpointer(format='pickle', root_path=default_dir, when=True, verbosity=1):
+  root_path = None if root_path is None else Path(root_path)
   opts = locals()
   CheckpointerConfig = namedtuple('CheckpointerConfig', sorted(opts))
   config = CheckpointerConfig(**opts)
