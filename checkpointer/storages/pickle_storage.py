@@ -18,7 +18,7 @@ def get_is_expired(config, path):
   try:
     get_collection_timestamp(config, path)
     return False
-  except FileNotFoundError:
+  except (FileNotFoundError, EOFError):
     return True
 
 def should_expire(config, path, expire_fn):
