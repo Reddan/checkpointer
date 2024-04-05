@@ -1,4 +1,4 @@
-import asyncio
+import types
 
 def unwrap_func(func):
   if hasattr(func, '__wrapped__'):
@@ -6,7 +6,7 @@ def unwrap_func(func):
   else:
     return func
 
-@asyncio.coroutine
+@types.coroutine
 def coroutine_as_generator(coroutine):
   val = yield from coroutine
   return val

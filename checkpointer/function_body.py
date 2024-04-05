@@ -1,6 +1,5 @@
 import inspect
 from types import FunctionType, CodeType
-from relib.raypipe import raypipe
 import relib.hashing as hashing
 from pathlib import Path
 from .utils import unwrap_func
@@ -18,11 +17,9 @@ def get_function_body(func):
   return '\n'.join(lines)
 
 def get_code_children(__code__):
-  return raypipe \
-    .filter(lambda const: isinstance(const, CodeType)) \
-    .flat_map(get_code_children) \
-    .do(lambda children: list(__code__.co_names) + children) \
-    .compute(__code__.co_consts)
+  consts = [const for const in __code__.co_consts if isinstance(const, CodeType)]
+  children = [child for const in consts for child in get_code_children(const)]
+  return list(__code__.co_names) + children
 
 def get_func_children(func, neighbor_funcs=[]):
   def get_candidate_func(co_name):
@@ -36,23 +33,20 @@ def get_func_children(func, neighbor_funcs=[]):
 
   code_children = get_code_children(func.__code__)
 
-  func_children = raypipe \
-    .map(get_candidate_func) \
-    .filter(clear_candidate) \
-    .compute(code_children)
+  func_children = [get_candidate_func(child) for child in code_children]
+  func_children = [child for child in func_children if clear_candidate(child)]
 
-  funcs = raypipe \
-    .flat_map(lambda child_func: \
-      get_func_children(child_func, func_children)
-    ) \
-    .do(lambda grand_children: [func] + grand_children) \
-    .sort_distinct(lambda func: func.__name__) \
-    .compute(func_children)
+  funcs = [func] + [
+    deep_child
+    for child_func in func_children
+    for deep_child in get_func_children(child_func, func_children)
+  ]
+  funcs = sorted(set(funcs), key=lambda func: func.__name__)
 
   return funcs
 
 def get_function_hash(func):
   funcs = [func] + get_func_children(func)
-  function_bodies = raypipe.map(get_function_body).compute(funcs)
+  function_bodies = list(map(get_function_body, funcs))
   function_bodies_hash = hashing.hash(function_bodies)
   return function_bodies_hash
