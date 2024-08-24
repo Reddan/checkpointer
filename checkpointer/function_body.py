@@ -6,12 +6,12 @@ from .utils import unwrap_func
 
 cwd = Path.cwd()
 
-def get_func_path(func):
-  return Path(inspect.getfile(func)).absolute()
+def get_fn_path(fn):
+  return Path(inspect.getfile(fn)).absolute()
 
-def get_function_body(func):
+def get_function_body(fn):
   # TODO: Strip comments
-  lines = inspect.getsourcelines(func)[0]
+  lines = inspect.getsourcelines(fn)[0]
   lines = [line.rstrip() for line in lines]
   lines = [line for line in lines if line]
   return '\n'.join(lines)
@@ -21,32 +21,29 @@ def get_code_children(__code__):
   children = [child for const in consts for child in get_code_children(const)]
   return list(__code__.co_names) + children
 
-def get_func_children(func, neighbor_funcs=[]):
-  def get_candidate_func(co_name):
-    candidate_func = func.__globals__.get(co_name, None)
-    return unwrap_func(candidate_func)
+def is_user_fn(candidate_fn, cleared_fns):
+  return isinstance(candidate_fn, FunctionType) \
+    and candidate_fn not in cleared_fns \
+    and cwd in get_fn_path(candidate_fn).parents
 
-  def clear_candidate(candidate_func):
-    return isinstance(candidate_func, FunctionType) \
-      and candidate_func not in neighbor_funcs \
-      and cwd in get_func_path(candidate_func).parents
+def append_fn_children(fn, cleared_fns):
+  code_children = get_code_children(fn.__code__)
+  fn_children = [unwrap_func(fn.__globals__.get(co_name, None)) for co_name in code_children]
+  fn_children = [child for child in fn_children if is_user_fn(child, cleared_fns)]
 
-  code_children = get_code_children(func.__code__)
+  for fn in fn_children:
+    cleared_fns.add(fn)
 
-  func_children = [get_candidate_func(child) for child in code_children]
-  func_children = [child for child in func_children if clear_candidate(child)]
+  for child_fn in fn_children:
+    append_fn_children(child_fn, cleared_fns)
 
-  funcs = [func] + [
-    deep_child
-    for child_func in func_children
-    for deep_child in get_func_children(child_func, func_children)
-  ]
-  funcs = sorted(set(funcs), key=lambda func: func.__name__)
+def get_fn_children(fn):
+  cleared_fns = set()
+  append_fn_children(fn, cleared_fns)
+  return sorted(cleared_fns, key=lambda fn: fn.__name__)
 
-  return funcs
-
-def get_function_hash(func):
-  funcs = [func] + get_func_children(func)
-  function_bodies = list(map(get_function_body, funcs))
-  function_bodies_hash = hashing.hash(function_bodies)
-  return function_bodies_hash
+def get_function_hash(fn):
+  fns = [fn] + get_fn_children(fn)
+  fn_bodies = list(map(get_function_body, fns))
+  fn_bodies_hash = hashing.hash(fn_bodies)
+  return fn_bodies_hash
