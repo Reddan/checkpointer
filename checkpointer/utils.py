@@ -1,9 +1,9 @@
 import types
 
-def unwrap_func(func):
-  while hasattr(func, '__wrapped__'):
-    func = func.__wrapped__
-  return func
+def unwrap_fn[T](fn: T) -> T:
+  while hasattr(fn, "__wrapped__"):
+    fn = getattr(fn, "__wrapped__")
+  return fn
 
 @types.coroutine
 def coroutine_as_generator(coroutine):

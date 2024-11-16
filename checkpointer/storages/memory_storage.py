@@ -1,18 +1,29 @@
 from datetime import datetime
+from ..types import Storage
 
 store = {}
 date_stored = {}
 
-def get_is_expired(config, path):
-  return path not in store
+class MemoryStorage(Storage):
+  @staticmethod
+  def is_expired(path):
+    return path not in store
 
-def should_expire(config, path, expire_fn):
-  return expire_fn(date_stored[path])
+  @staticmethod
+  def should_expire(path, expire_fn):
+    return expire_fn(date_stored[path])
 
-def store_data(config, path, data):
-  store[path] = data
-  date_stored[path] = datetime.now()
-  return data
+  @staticmethod
+  def store_data(path, data):
+    store[path] = data
+    date_stored[path] = datetime.now()
+    return data
 
-def load_data(config, path):
-  return store[path]
+  @staticmethod
+  def load_data(path):
+    return store[path]
+
+  @staticmethod
+  def delete_data(path):
+    del store[path]
+    del date_stored[path]

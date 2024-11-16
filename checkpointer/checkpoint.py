@@ -1,68 +1,113 @@
 import inspect
-from collections import namedtuple
+import relib.hashing as hashing
+from typing import TypedDict, Unpack, Literal, Any, cast
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from functools import wraps
-import relib.hashing as hashing
-from . import storage
+from .types import Storage
 from .function_body import get_function_hash
-from .utils import unwrap_func, sync_resolve_coroutine
+from .utils import unwrap_fn, sync_resolve_coroutine
+from .storages.pickle_storage import PickleStorage
+from .storages.memory_storage import MemoryStorage
+from .storages.bcolz_storage import BcolzStorage
+from .print_checkpoint import print_checkpoint
 
-default_dir = Path.home() / '.checkpoints'
+DEFAULT_DIR = Path.home() / ".cache/checkpoints"
+STORAGE_MAP = {"memory": MemoryStorage, "pickle": PickleStorage, "bcolz": BcolzStorage}
 
-def get_invoke_path(func, function_hash, args, kwargs, path):
-  if type(path) == str:
+def get_checkpoint_id(fn: Callable, fn_hash: str, path: "CheckpointPath", args: tuple, kw: dict) -> str:
+  if isinstance(path, str):
     return path
   elif callable(path):
-    return path(*args, **kwargs)
+    x = path(*args, **kw)
+    assert isinstance(x, str), "path function must return a string"
+    return x
   else:
-    hash = hashing.hash([function_hash, args, kwargs or 0])
-    file_name = Path(func.__code__.co_filename).name
-    name = func.__name__
-    return file_name + '/' + name + '/' + hash
+    params_hash = hashing.hash([fn_hash, args, kw or 0])
+    file_name = Path(fn.__code__.co_filename).name
+    return "/".join((file_name, fn.__name__, params_hash))
 
-def create_checkpointer_from_config(config):
-  def checkpoint(opt_func=None, format=config.format, path=None, should_expire=None, when=True):
-    def receive_func(func):
-      if not (config.when and when):
-        return func
+StorageType = Literal["pickle", "memory", "bcolz"] | Storage
+CheckpointPath = str | Callable[..., str] | None
+ShouldExpire = Callable[[datetime], bool]
 
-      config_ = config._replace(format=format)
-      is_async = inspect.iscoroutinefunction(func)
-      unwrapped_func = unwrap_func(func)
-      function_hash = get_function_hash(unwrapped_func)
+class CheckpointerOpts(TypedDict, total=False):
+  format: StorageType
+  root_path: Path | str | None
+  when: bool
+  verbosity: Literal[0, 1]
+  path: CheckpointPath
+  should_expire: ShouldExpire
 
-      @wraps(unwrapped_func)
-      def wrapper(*args, **kwargs):
-        compute = lambda: func(*args, **kwargs)
-        recheck = kwargs.pop('recheck', False)
-        invoke_path = get_invoke_path(unwrapped_func, function_hash, args, kwargs, path)
-        coroutine = storage.store_on_demand(compute, invoke_path, config_, recheck, should_expire)
-        if is_async:
-          return coroutine
-        else:
-          return sync_resolve_coroutine(coroutine)
+class Checkpointer:
+  def __init__(self, **opts: Unpack[CheckpointerOpts]):
+    self.format = opts.get("format", "pickle")
+    self.root_path = Path(opts.get("root_path", DEFAULT_DIR) or ".")
+    self.when = opts.get("when", True)
+    self.verbosity = opts.get("verbosity", 1)
+    self.path = opts.get("path")
+    self.should_expire = opts.get("should_expire")
 
-      wrapper.checkpoint_config = config_
+  def get_storage(self) -> Storage:
+    return STORAGE_MAP[self.format] if isinstance(self.format, str) else self.format
 
+  async def _store_on_demand(self, checkpoint_id: str, compute: Callable[[], Any], force: bool):
+    checkpoint_path = self.root_path / checkpoint_id
+    storage = self.get_storage()
+    should_log = storage != MemoryStorage and self.verbosity != 0
+    refresh = force \
+      or storage.is_expired(checkpoint_path) \
+      or (self.should_expire and storage.should_expire(checkpoint_path, self.should_expire))
+
+    if refresh:
+      print_checkpoint(should_log, "MEMORIZING", checkpoint_id, "blue")
+      data = compute()
+      if inspect.iscoroutine(data):
+        data = await data
+      return storage.store_data(checkpoint_path, data)
+
+    try:
+      data = storage.load_data(checkpoint_path)
+      print_checkpoint(should_log, "REMEMBERED", checkpoint_id, "green")
+      return data
+    except (EOFError, FileNotFoundError):
+      print_checkpoint(should_log, "CORRUPTED", checkpoint_id, "yellow")
+      storage.delete_data(checkpoint_path)
+      result = await self._store_on_demand(checkpoint_id, compute, force)
+      return result
+
+  def __call__(self, opt_fn: Callable | None=None, **override_opts: Unpack[CheckpointerOpts]):
+    if override_opts:
+      opts = CheckpointerOpts(**{**self.__dict__, **override_opts})
+      return Checkpointer(**opts)(opt_fn)
+
+    def receive_fn(fn: Callable):
+      if not self.when:
+        return fn
+
+      is_async = inspect.iscoroutinefunction(fn)
+      unwrapped_fn = unwrap_fn(fn)
+      fn_hash = get_function_hash(unwrapped_fn)
+
+      @wraps(unwrapped_fn)
+      def wrapper(*args, **kw):
+        compute = lambda: fn(*args, **kw)
+        recheck = kw.pop("recheck", False)
+        checkpoint_id = get_checkpoint_id(unwrapped_fn, fn_hash, self.path, args, kw)
+        coroutine = self._store_on_demand(checkpoint_id, compute, recheck)
+        return coroutine if is_async else sync_resolve_coroutine(coroutine)
+
+      setattr(wrapper, "checkpointer", self)
       return wrapper
 
-    return receive_func(opt_func) if callable(opt_func) else receive_func
+    return receive_fn(opt_fn) if callable(opt_fn) else receive_fn
 
-  return checkpoint
-
-def create_checkpointer(format='pickle', root_path=default_dir, when=True, verbosity=1):
-  root_path = None if root_path is None else Path(root_path)
-  opts = locals()
-  CheckpointerConfig = namedtuple('CheckpointerConfig', sorted(opts))
-  config = CheckpointerConfig(**opts)
-  return create_checkpointer_from_config(config)
-
-def read_only(wrapper_func, config, format='pickle', path=None):
-  func = unwrap_func(wrapper_func)
-  function_hash = get_function_hash(func)
-
-  def wrapper(*args, **kwargs):
-    invoke_path = get_invoke_path(func, function_hash, args, kwargs, path)
-    return storage.read_from_store(invoke_path, config, storage=format)
-
-  return wrapper
+  def get(self, fn: Callable, args=[], kw={}, path: CheckpointPath=None) -> Any:
+    unwrapped_fn = unwrap_fn(fn)
+    fn_hash = get_function_hash(unwrapped_fn)
+    checkpoint_path = self.root_path / get_checkpoint_id(unwrapped_fn, fn_hash, path, args, kw)
+    try:
+      return self.get_storage().load_data(checkpoint_path)
+    except:
+      return None
