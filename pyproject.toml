@@ -1,15 +1,14 @@
 [project]
 name = "checkpointer"
-version = "1.2.0"
-requires-python = ">=3.8"
+version = "2.0.0"
+requires-python = ">=3.12"
 dependencies = [
   "relib",
-  "termcolor",
 ]
 authors = [
   {name = "Hampus Hallman"}
 ]
-# description = ""
+description = "A Python library for memoizing function results with support for multiple storage backends, async runtimes, and automatic cache invalidation"
 readme = "README.md"
 license = {file = "LICENSE"}
 

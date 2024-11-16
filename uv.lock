@@ -1,0 +1,22 @@
+version = 1
+requires-python = ">=3.12"
+
+[[package]]
+name = "checkpointer"
+version = "2.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "relib" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "relib" }]
+
+[[package]]
+name = "relib"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/30/c97be721a6fcdf7c3c87d2444c631702c052281605ceb5b028b7e918b614/relib-1.2.0.tar.gz", hash = "sha256:cac9cf3e4b58f5842fc9033c86ecc944573fb374d8d9b9f339cb1c0fea362154", size = 7000 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bc/d8/9f536ff777c351e6ffc9955e7e0117b13440dba15a15dc7d018f6d8a6832/relib-1.2.0-py3-none-any.whl", hash = "sha256:85c3822856f549052ad78868cc24af92b2ee9ed40464cb5534e7d076d33f77f8", size = 8754 },
+]
