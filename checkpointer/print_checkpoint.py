@@ -44,7 +44,7 @@ def colored_(text: str, color: Color | None = None, on_color: Color | None = Non
     text = f"\033[{COLOR_MAP[on_color] + 10}m{text}"
   return text + "\033[0m"
 
-noop = lambda *args, **_: args[0]
+noop = lambda text, *a, **k: text
 colored = colored_ if allow_color() else noop
 
 def print_checkpoint(should_log: bool, title: str, text: str, color: Color):

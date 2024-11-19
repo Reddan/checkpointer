@@ -131,6 +131,61 @@ stored_result = expensive_function.get(4)
 
 ---
 
+## Storage Backends
+
+`checkpointer` works with both built-in and custom storage backends, so you can use what's provided or roll your own as needed.
+
+### Built-In Backends
+
+1. **PickleStorage**: Stores checkpoints on disk using Python's `pickle`.
+2. **MemoryStorage**: Keeps checkpoints in memory for non-persistent, fast caching.
+
+You can specify a storage backend using either its name (`"pickle"` or `"memory"`) or its corresponding class (`PickleStorage` or `MemoryStorage`) in the `format` parameter:
+
+```python
+from checkpointer import checkpoint, PickleStorage, MemoryStorage
+
+@checkpoint(format="pickle")  # Equivalent to format=PickleStorage
+def disk_cached(x: int) -> int:
+    return x ** 2
+
+@checkpoint(format="memory")  # Equivalent to format=MemoryStorage
+def memory_cached(x: int) -> int:
+    return x * 10
+```
+
+### Custom Storage Backends
+
+Create custom storage backends by implementing methods for storing, loading, and managing checkpoints. For example, a custom storage backend might use a database, cloud storage, or a specialized format.
+
+Example usage:
+```python
+from checkpointer import checkpoint, Storage
+from typing import Any
+from pathlib import Path
+from datetime import datetime
+
+class CustomStorage(Storage):  # Optional for type hinting
+    @staticmethod
+    def exists(path: Path) -> bool: ...
+    @staticmethod
+    def checkpoint_date(path: Path) -> datetime: ...
+    @staticmethod
+    def store(path: Path, data: Any) -> None: ...
+    @staticmethod
+    def load(path: Path) -> Any: ...
+    @staticmethod
+    def delete(path: Path) -> None: ...
+
+@checkpoint(format=CustomStorage)
+def custom_cached(x: int):
+    return x ** 2
+```
+
+Using a custom backend lets you tailor storage to your application, whether it involves databases, cloud storage, or custom file formats.
+
+---
+
 ## Configuration Options ⚙️
 
 | Option         | Type                                | Default     | Description                                 |

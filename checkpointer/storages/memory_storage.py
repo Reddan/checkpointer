@@ -6,24 +6,23 @@ date_stored = {}
 
 class MemoryStorage(Storage):
   @staticmethod
-  def is_expired(path):
-    return path not in store
+  def exists(path):
+    return str(path) in store
 
   @staticmethod
-  def should_expire(path, expire_fn):
-    return expire_fn(date_stored[path])
+  def checkpoint_date(path):
+    return date_stored[str(path)]
 
   @staticmethod
-  def store_data(path, data):
-    store[path] = data
-    date_stored[path] = datetime.now()
-    return data
+  def store(path, data):
+    store[str(path)] = data
+    date_stored[str(path)] = datetime.now()
 
   @staticmethod
-  def load_data(path):
-    return store[path]
+  def load(path):
+    return store[str(path)]
 
   @staticmethod
-  def delete_data(path):
-    del store[path]
-    del date_stored[path]
+  def delete(path):
+    del store[str(path)]
+    del date_stored[str(path)]
