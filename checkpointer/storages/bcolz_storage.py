@@ -24,16 +24,13 @@ def insert_data(path: Path, data):
   c.flush()
 
 class BcolzStorage(Storage):
-  @staticmethod
-  def exists(path):
+  def exists(self, path):
     return path.exists()
 
-  @staticmethod
-  def checkpoint_date(path):
+  def checkpoint_date(self, path):
     return datetime.fromtimestamp(path.stat().st_mtime)
 
-  @staticmethod
-  def store(path, data):
+  def store(self, path, data):
     metapath = get_metapath(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     data_type_str = get_data_type_str(data)
@@ -48,12 +45,11 @@ class BcolzStorage(Storage):
     if data_type_str in ["tuple", "dict"]:
       for i in range(len(fields)):
         child_path = Path(f"{path} ({i})")
-        BcolzStorage.store(child_path, data[fields[i]])
+        self.store(child_path, data[fields[i]])
     else:
       insert_data(path, data)
 
-  @staticmethod
-  def load(path):
+  def load(self, path):
     import bcolz
     metapath = get_metapath(path)
     meta_data = bcolz.open(metapath)[:][0]
@@ -61,7 +57,7 @@ class BcolzStorage(Storage):
     if data_type_str in ["tuple", "dict"]:
       fields = meta_data["fields"]
       partitions = range(len(fields))
-      data = [BcolzStorage.load(Path(f"{path} ({i})")) for i in partitions]
+      data = [self.load(Path(f"{path} ({i})")) for i in partitions]
       if data_type_str == "tuple":
         return tuple(data)
       else:
@@ -75,8 +71,7 @@ class BcolzStorage(Storage):
       else:
         return data[:]
 
-  @staticmethod
-  def delete(path):
+  def delete(self, path):
     # NOTE: Not recursive
     metapath = get_metapath(path)
     try:

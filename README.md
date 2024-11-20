@@ -156,26 +156,20 @@ def memory_cached(x: int) -> int:
 
 ### Custom Storage Backends
 
-Create custom storage backends by implementing methods for storing, loading, and managing checkpoints. For example, a custom storage backend might use a database, cloud storage, or a specialized format.
+Create a custom storage backend by inheriting from the `Storage` class and implementing its methods. Access configuration options through the `self.checkpointer` attribute, an instance of `Checkpointer`.
 
-Example usage:
+#### Example: Custom Storage Backend
+
 ```python
 from checkpointer import checkpoint, Storage
-from typing import Any
-from pathlib import Path
 from datetime import datetime
 
-class CustomStorage(Storage):  # Optional for type hinting
-    @staticmethod
-    def exists(path: Path) -> bool: ...
-    @staticmethod
-    def checkpoint_date(path: Path) -> datetime: ...
-    @staticmethod
-    def store(path: Path, data: Any) -> None: ...
-    @staticmethod
-    def load(path: Path) -> Any: ...
-    @staticmethod
-    def delete(path: Path) -> None: ...
+class CustomStorage(Storage):
+    def exists(self, path) -> bool: ...  # Check if a checkpoint exists at the given path
+    def checkpoint_date(self, path) -> datetime: ...  # Return the date the checkpoint was created
+    def store(self, path, data): ...  # Save the checkpoint data
+    def load(self, path): ...  # Return the checkpoint data
+    def delete(self, path): ...  # Delete the checkpoint
 
 @checkpoint(format=CustomStorage)
 def custom_cached(x: int):

@@ -1,28 +1,25 @@
+from typing import Any
+from pathlib import Path
 from datetime import datetime
 from ..types import Storage
 
-store = {}
-date_stored = {}
+item_map: dict[str, tuple[datetime, Any]] = {}
 
 class MemoryStorage(Storage):
-  @staticmethod
-  def exists(path):
-    return str(path) in store
+  def get_short_path(self, path: Path):
+    return str(path.relative_to(self.checkpointer.root_path))
 
-  @staticmethod
-  def checkpoint_date(path):
-    return date_stored[str(path)]
+  def exists(self, path):
+    return self.get_short_path(path) in item_map
 
-  @staticmethod
-  def store(path, data):
-    store[str(path)] = data
-    date_stored[str(path)] = datetime.now()
+  def checkpoint_date(self, path):
+    return item_map[self.get_short_path(path)][0]
 
-  @staticmethod
-  def load(path):
-    return store[str(path)]
+  def store(self, path, data):
+    item_map[self.get_short_path(path)] = (datetime.now(), data)
 
-  @staticmethod
-  def delete(path):
-    del store[str(path)]
-    del date_stored[str(path)]
+  def load(self, path):
+    return item_map[self.get_short_path(path)][1]
+
+  def delete(self, path):
+    del item_map[self.get_short_path(path)]

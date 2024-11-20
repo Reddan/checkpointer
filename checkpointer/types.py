@@ -1,19 +1,23 @@
-from typing import Protocol, Any
+from __future__ import annotations
+from typing import Any, TYPE_CHECKING
 from pathlib import Path
 from datetime import datetime
 
-class Storage(Protocol):
-  @staticmethod
-  def exists(path: Path) -> bool: ...
+if TYPE_CHECKING:
+  from .checkpoint import Checkpointer
 
-  @staticmethod
-  def checkpoint_date(path: Path) -> datetime: ...
+class Storage:
+  checkpointer: Checkpointer
 
-  @staticmethod
-  def store(path: Path, data: Any) -> None: ...
+  def __init__(self, checkpointer: Checkpointer):
+    self.checkpointer = checkpointer
 
-  @staticmethod
-  def load(path: Path) -> Any: ...
+  def exists(self, path: Path) -> bool: ...
 
-  @staticmethod
-  def delete(path: Path) -> None: ...
+  def checkpoint_date(self, path: Path) -> datetime: ...
+
+  def store(self, path: Path, data: Any) -> None: ...
+
+  def load(self, path: Path) -> Any: ...
+
+  def delete(self, path: Path) -> None: ...
