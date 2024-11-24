@@ -7,16 +7,13 @@ from datetime import datetime
 from functools import update_wrapper
 from .types import Storage
 from .function_body import get_function_hash
-from .utils import unwrap_fn, sync_resolve_coroutine
-from .storages.pickle_storage import PickleStorage
-from .storages.memory_storage import MemoryStorage
-from .storages.bcolz_storage import BcolzStorage
+from .utils import unwrap_fn, sync_resolve_coroutine, resolved_awaitable
+from .storages import STORAGE_MAP
 from .print_checkpoint import print_checkpoint
 
 Fn = TypeVar("Fn", bound=Callable)
 
 DEFAULT_DIR = Path.home() / ".cache/checkpoints"
-STORAGE_MAP: dict[str, Type[Storage]] = {"memory": MemoryStorage, "pickle": PickleStorage, "bcolz": BcolzStorage}
 
 class CheckpointError(Exception):
   pass
@@ -101,12 +98,17 @@ class CheckpointFn(Generic[Fn]):
     coroutine = self._store_on_demand(args, kw, rerun)
     return coroutine if self.is_async else sync_resolve_coroutine(coroutine)
 
-  __call__: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw))
-  rerun: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw, True))
-
-  def get(self, *args, **kw) -> Any:
+  def _get(self, args, kw) -> Any:
     checkpoint_path = self.checkpointer.root_path / self.get_checkpoint_id(args, kw)
     try:
-      return self.storage.load(checkpoint_path)
+      val = self.storage.load(checkpoint_path)
+      return resolved_awaitable(val) if self.is_async else val
     except:
       raise CheckpointError("Could not load checkpoint")
+
+  def exists(self, *args: tuple, **kw: dict) -> bool:
+    return self.storage.exists(self.checkpointer.root_path / self.get_checkpoint_id(args, kw))
+
+  __call__: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw))
+  rerun: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw, True))
+  get: Fn = cast(Fn, lambda self, *args, **kw: self._get(args, kw))

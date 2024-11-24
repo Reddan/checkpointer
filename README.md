@@ -2,7 +2,7 @@
 
 `checkpointer` is a Python library for memoizing function results. It provides a decorator-based API with support for multiple storage backends. Use it for computationally expensive operations where caching can save time, or during development to avoid waiting for redundant computations.
 
-Adding or removing `@checkpoint` doesn't change how your code works, and it can be applied to any function, including ones you've already written, without altering their behavior or introducing side effects. The original function remains unchanged and can still be called directly when needed.
+Adding or removing `@checkpoint` doesn't change how your code works. You can apply it to any function, including ones you've already written, without altering their behavior or introducing side effects. The original function remains unchanged and can still be called directly when needed.
 
 ### Key Features:
 - 🗂️ **Multiple Storage Backends**: Built-in support for in-memory and pickle-based storage, or create your own.
@@ -42,6 +42,7 @@ result = expensive_function(4)  # Loads from the cache
 When you use `@checkpoint`, the function's **arguments** (`args`, `kwargs`) are hashed to create a unique identifier for each call. This identifier is used to store and retrieve cached results. If the same arguments are passed again, `checkpointer` loads the cached result instead of recomputing.
 
 Additionally, `checkpointer` ensures that caches are invalidated when a function's implementation or any of its dependencies change. Each function is assigned a hash based on:
+
 1. **Its source code**: Changes to the function's code update its hash.
 2. **Dependent functions**: If a function calls others, changes in those dependencies will also update the hash.
 
@@ -99,6 +100,7 @@ def some_expensive_function():
 ## Usage
 
 ### Basic Invocation and Caching
+
 Call the decorated function as usual. On the first call, the result is computed and stored in the cache. Subsequent calls with the same arguments load the result from the cache:
 
 ```python
@@ -107,6 +109,7 @@ result = expensive_function(4)  # Loads the result from the cache
 ```
 
 ### Force Recalculation
+
 Force a recalculation and overwrite the stored checkpoint:
 
 ```python
@@ -114,6 +117,7 @@ result = expensive_function.rerun(4)
 ```
 
 ### Call the Original Function
+
 Use `fn` to directly call the original, undecorated function:
 
 ```python
@@ -123,6 +127,7 @@ result = expensive_function.fn(4)
 This is especially useful **inside recursive functions** to avoid redundant caching of intermediate steps while still caching the final result.
 
 ### Retrieve Stored Checkpoints
+
 Access cached results without recalculating:
 
 ```python
@@ -145,11 +150,11 @@ You can specify a storage backend using either its name (`"pickle"` or `"memory"
 ```python
 from checkpointer import checkpoint, PickleStorage, MemoryStorage
 
-@checkpoint(format="pickle")  # Equivalent to format=PickleStorage
+@checkpoint(format="pickle")  # Short for format=PickleStorage
 def disk_cached(x: int) -> int:
     return x ** 2
 
-@checkpoint(format="memory")  # Equivalent to format=MemoryStorage
+@checkpoint(format="memory")  # Short for format=MemoryStorage
 def memory_cached(x: int) -> int:
     return x * 10
 ```
@@ -182,14 +187,14 @@ Using a custom backend lets you tailor storage to your application, whether it i
 
 ## Configuration Options ⚙️
 
-| Option         | Type                                | Default     | Description                                 |
-|----------------|-------------------------------------|-------------|---------------------------------------------|
-| `format`       | `"pickle"`, `"memory"`, `Storage`   | `"pickle"`  | Storage backend format.                     |
-| `root_path`    | `Path`, `str`, or `None`            | User Cache  | Root directory for storing checkpoints.     |
-| `when`         | `bool`                              | `True`      | Enable or disable checkpointing.            |
-| `verbosity`    | `0` or `1`                          | `1`         | Logging verbosity.                          |
-| `path`         | `Callable[..., str]`                | `None`      | Custom path for checkpoint storage.         |
-| `should_expire`| `Callable[[datetime], bool]`        | `None`      | Custom expiration logic.                    |
+| Option          | Type                              | Default              | Description                             |
+|-----------------|-----------------------------------|----------------------|-----------------------------------------|
+| `format`        | `"pickle"`, `"memory"`, `Storage` | `"pickle"`           | Storage backend format.                 |
+| `root_path`     | `Path`, `str`, or `None`          | ~/.cache/checkpoints | Root directory for storing checkpoints. |
+| `when`          | `bool`                            | `True`               | Enable or disable checkpointing.        |
+| `verbosity`     | `0` or `1`                        | `1`                  | Logging verbosity.                      |
+| `path`          | `Callable[..., str]`              | `None`               | Custom path for checkpoint storage.     |
+| `should_expire` | `Callable[[datetime], bool]`      | `None`               | Custom expiration logic.                |
 
 ---
 
@@ -211,13 +216,13 @@ async def async_compute_sum(a: int, b: int) -> int:
 
 async def main():
     result1 = compute_square(5)
-    print(result1)
+    print(result1)  # Outputs 25
 
     result2 = await async_compute_sum(3, 7)
-    print(result2)
+    print(result2)  # Outputs 10
 
-    result3 = async_compute_sum.get(3, 7)
-    print(result3)
+    result3 = await async_compute_sum.get(3, 7)
+    print(result3)  # Outputs 10
 
 asyncio.run(main())
 ```
