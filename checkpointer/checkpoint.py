@@ -54,7 +54,7 @@ class CheckpointFn(Generic[Fn]):
     storage = STORAGE_MAP[checkpointer.format] if isinstance(checkpointer.format, str) else checkpointer.format
     self.checkpointer = checkpointer
     self.fn = fn
-    self.fn_hash = get_function_hash(wrapped)
+    self.fn_hash, self.depends = get_function_hash(wrapped)
     self.fn_id = f"{file_name}/{wrapped.__name__}"
     self.is_async = inspect.iscoroutinefunction(wrapped)
     self.storage = storage(checkpointer)
