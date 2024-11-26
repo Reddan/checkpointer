@@ -1,3 +1,4 @@
+import dis
 import inspect
 import relib.hashing as hashing
 from collections.abc import Callable
@@ -28,15 +29,14 @@ def is_user_fn(candidate_fn) -> TypeGuard[FunctionType]:
   return isinstance(candidate_fn, FunctionType) \
     and cwd in get_fn_path(candidate_fn).parents
 
-def get_conames_deep(code: CodeType) -> list[str]:
-  # Deep meaning from nested scopes (functions)
-  consts = [const for const in code.co_consts if isinstance(const, CodeType)]
-  children = [child for const in consts for child in get_conames_deep(const)]
-  return list(code.co_names) + children
+def get_referenced_global_names(code: CodeType) -> set[str]:
+  variables = {instr.argval for instr in dis.get_instructions(code) if instr.opname == "LOAD_GLOBAL"}
+  children = [get_referenced_global_names(const) for const in code.co_consts if isinstance(const, CodeType)]
+  return variables.union(*children)
 
 def get_global_depends(fn: Callable) -> set[Callable]:
   vardict = fn.__globals__
-  co_names = get_conames_deep(fn.__code__)
+  co_names = get_referenced_global_names(fn.__code__)
   reference_vals = [unwrap_fn(vardict.get(co_name)) for co_name in co_names]
   return {val for val in reference_vals if is_user_fn(val)}
 
