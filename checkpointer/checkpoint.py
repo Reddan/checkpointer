@@ -25,6 +25,7 @@ class CheckpointerOpts(TypedDict, total=False):
   verbosity: Literal[0, 1]
   path: Callable[..., str] | None
   should_expire: Callable[[datetime], bool] | None
+  capture: bool
 
 class Checkpointer:
   def __init__(self, **opts: Unpack[CheckpointerOpts]):
@@ -34,6 +35,7 @@ class Checkpointer:
     self.verbosity = opts.get("verbosity", 1)
     self.path = opts.get("path")
     self.should_expire = opts.get("should_expire")
+    self.capture = opts.get("capture", False)
 
   @overload
   def __call__(self, fn: Fn, **override_opts: Unpack[CheckpointerOpts]) -> CheckpointFn[Fn]: ...
@@ -54,14 +56,16 @@ class CheckpointFn(Generic[Fn]):
     storage = STORAGE_MAP[checkpointer.format] if isinstance(checkpointer.format, str) else checkpointer.format
     self.checkpointer = checkpointer
     self.fn = fn
-    self.fn_hash, self.depends = get_function_hash(wrapped)
+    self.fn_hash, self.depends = get_function_hash(wrapped, self.checkpointer.capture)
     self.fn_id = f"{file_name}/{wrapped.__name__}"
     self.is_async = inspect.iscoroutinefunction(wrapped)
     self.storage = storage(checkpointer)
 
   def get_checkpoint_id(self, args: tuple, kw: dict) -> str:
     if not callable(self.checkpointer.path):
-      return f"{self.fn_id}/{hashing.hash([self.fn_hash, args, kw or 0])}"
+      # TODO: use digest size before digesting instead of truncating the hash
+      call_hash = hashing.hash((self.fn_hash, args, kw), "blake2b")[:32]
+      return f"{self.fn_id}/{call_hash}"
     checkpoint_id = self.checkpointer.path(*args, **kw)
     if not isinstance(checkpoint_id, str):
       raise CheckpointError(f"path function must return a string, got {type(checkpoint_id)}")

@@ -10,6 +10,7 @@ Adding or removing `@checkpoint` doesn't change how your code works. You can app
 - 🔄 **Async and Sync Compatibility**: Works with synchronous functions and any Python async runtime (e.g., `asyncio`, `Trio`, `Curio`).
 - ⏲️ **Custom Expiration Logic**: Automatically invalidate old checkpoints.
 - 📂 **Flexible Path Configuration**: Control where checkpoints are stored.
+- 📦 **Captured Variables Handling**: Optionally include captured variables in cache invalidation.
 
 ---
 
@@ -45,6 +46,7 @@ Additionally, `checkpointer` ensures that caches are invalidated when a function
 
 1. **Its source code**: Changes to the function's code update its hash.
 2. **Dependent functions**: If a function calls others, changes in those dependencies will also update the hash.
+3. **Captured variables**: (Optional) If `capture=True`, changes to captured variables and global variables will also update the hash.
 
 ### Example: Cache Invalidation
 
@@ -187,14 +189,15 @@ Using a custom backend lets you tailor storage to your application, whether it i
 
 ## Configuration Options ⚙️
 
-| Option          | Type                              | Default              | Description                             |
-|-----------------|-----------------------------------|----------------------|-----------------------------------------|
-| `format`        | `"pickle"`, `"memory"`, `Storage` | `"pickle"`           | Storage backend format.                 |
-| `root_path`     | `Path`, `str`, or `None`          | ~/.cache/checkpoints | Root directory for storing checkpoints. |
-| `when`          | `bool`                            | `True`               | Enable or disable checkpointing.        |
-| `verbosity`     | `0` or `1`                        | `1`                  | Logging verbosity.                      |
-| `path`          | `Callable[..., str]`              | `None`               | Custom path for checkpoint storage.     |
-| `should_expire` | `Callable[[datetime], bool]`      | `None`               | Custom expiration logic.                |
+| Option          | Type                              | Default              | Description                                    |
+|-----------------|-----------------------------------|----------------------|------------------------------------------------|
+| `capture`       | `bool`                            | `False`              | Include captured variables in function hashes. |
+| `format`        | `"pickle"`, `"memory"`, `Storage` | `"pickle"`           | Storage backend format.                        |
+| `root_path`     | `Path`, `str`, or `None`          | ~/.cache/checkpoints | Root directory for storing checkpoints.        |
+| `when`          | `bool`                            | `True`               | Enable or disable checkpointing.               |
+| `verbosity`     | `0` or `1`                        | `1`                  | Logging verbosity.                             |
+| `path`          | `Callable[..., str]`              | `None`               | Custom path for checkpoint storage.            |
+| `should_expire` | `Callable[[datetime], bool]`      | `None`               | Custom expiration logic.                       |
 
 ---
 
