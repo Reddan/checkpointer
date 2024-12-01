@@ -1,19 +1,54 @@
 import dis
 import inspect
 import relib.hashing as hashing
+from itertools import takewhile, islice, chain
 from collections.abc import Callable
-from typing import TypeGuard
+from typing import Literal, TypeGuard, Any
 from types import FunctionType, CodeType
 from pathlib import Path
 from .utils import unwrap_fn
 
 cwd = Path.cwd()
 
-def get_cell_contents(cell):
+def get_at_attr(d: dict, keys: tuple[str, ...]) -> Any:
+  try:
+    d = d[keys[0]]
+    for key in keys[1:]:
+      d = getattr(d, key)
+  except KeyError:
+    return ...
+  return d
+
+def get_cell_contents(cell) -> Any:
   try:
     return cell.cell_contents
   except ValueError:
-    return None
+    return ...
+
+def get_referenced_names(code: CodeType, closure = False) -> set[tuple[str, ...]]:
+  opname = "LOAD_GLOBAL" if not closure else "LOAD_DEREF"
+  variables: set[tuple[str, ...]] = set()
+  instructions = list(dis.get_instructions(code))
+
+  for i, instr in enumerate(instructions):
+    if instr.opname == opname:
+      name = instr.argval
+      attrs = takewhile(lambda instr: instr.opname == "LOAD_ATTR", islice(instructions, i + 1, None))
+      attr_path = (name, *(instr.argval for instr in attrs))
+      variables.add(attr_path)
+
+  children = [get_referenced_names(const, closure) for const in code.co_consts if isinstance(const, CodeType)]
+
+  return variables.union(*children)
+
+def get_fn_accessmap(fn: Callable) -> dict[Literal["global", "closure"], dict[tuple[str, ...], Any]]:
+  global_vars = fn.__globals__
+  closure_vars = {k: get_cell_contents(v) for k, v in zip(fn.__code__.co_freevars, fn.__closure__ or [])}
+  global_names = get_referenced_names(fn.__code__, closure=False)
+  closure_names = get_referenced_names(fn.__code__, closure=True)
+  global_dict = {name: get_at_attr(global_vars, name) for name in sorted(global_names)}
+  closure_dict = {name: get_at_attr(closure_vars, name) for name in sorted(closure_names)}
+  return {"global": global_dict, "closure": closure_dict}
 
 def get_fn_path(fn: Callable) -> Path:
   return Path(inspect.getfile(fn)).resolve()
@@ -25,27 +60,14 @@ def get_fn_body(fn: Callable) -> str:
   lines = [line for line in lines if line]
   return "\n".join(lines)
 
-def is_user_fn(candidate_fn) -> TypeGuard[FunctionType]:
+def is_user_fn(candidate_fn) -> TypeGuard[Callable]:
   return isinstance(candidate_fn, FunctionType) \
     and cwd in get_fn_path(candidate_fn).parents
 
-def get_referenced_global_names(code: CodeType) -> set[str]:
-  variables = {instr.argval for instr in dis.get_instructions(code) if instr.opname == "LOAD_GLOBAL"}
-  children = [get_referenced_global_names(const) for const in code.co_consts if isinstance(const, CodeType)]
-  return variables.union(*children)
-
-def get_global_depends(fn: Callable) -> set[Callable]:
-  vardict = fn.__globals__
-  co_names = get_referenced_global_names(fn.__code__)
-  reference_vals = [unwrap_fn(vardict.get(co_name)) for co_name in co_names]
-  return {val for val in reference_vals if is_user_fn(val)}
-
-def get_closure_depends(fn: Callable) -> set[Callable]:
-  cell_vals = [unwrap_fn(get_cell_contents(cell)) for cell in fn.__closure__ or []]
-  return {val for val in cell_vals if is_user_fn(val)}
-
 def append_fn_depends(cleared_fns: set[Callable], fn: Callable) -> None:
-  depends = get_global_depends(fn) | get_closure_depends(fn)
+  accessmap = get_fn_accessmap(fn)
+  vals = (unwrap_fn(val) for val in chain(accessmap["global"].values(), accessmap["closure"].values()))
+  depends = {val for val in vals if is_user_fn(val)}
   not_cleared = depends - cleared_fns
   cleared_fns.update(not_cleared)
   for child_fn in not_cleared:
