@@ -1,3 +1,8 @@
+"""
+TODO: clear_invalidated() - removes checkpoints that don't match fn_hash
+TODO: use ~/.cache/pycache folder hierarchy + hash as filename
+"""
+
 import pickle
 from pathlib import Path
 from datetime import datetime

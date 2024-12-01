@@ -6,6 +6,7 @@ from datetime import datetime
 if TYPE_CHECKING:
   from .checkpoint import Checkpointer
 
+# TODO: Methods for cleaning up old checkpoints
 class Storage:
   checkpointer: Checkpointer
 

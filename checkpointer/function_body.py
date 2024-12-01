@@ -1,3 +1,7 @@
+"""
+TODO: Better class support?
+"""
+
 from __future__ import annotations
 import dis
 import inspect
