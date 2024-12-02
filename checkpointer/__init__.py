@@ -1,7 +1,8 @@
-from .checkpoint import Checkpointer, CheckpointFn, CheckpointError
-from .types import Storage
-from .function_body import get_function_hash
 import tempfile
+from .checkpoint import Checkpointer, CheckpointError, CheckpointFn
+from .fn_ident import get_function_hash
+from .storages import MemoryStorage, PickleStorage
+from .types import Storage
 
 create_checkpointer = Checkpointer
 checkpoint = Checkpointer()

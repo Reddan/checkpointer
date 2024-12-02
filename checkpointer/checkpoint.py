@@ -1,15 +1,15 @@
 from __future__ import annotations
 import inspect
 import relib.hashing as hashing
-from typing import Generic, TypeVar, Type, TypedDict, Callable, Unpack, Literal, Any, cast, overload
-from pathlib import Path
 from datetime import datetime
 from functools import update_wrapper
-from .types import Storage
-from .function_body import get_function_hash
-from .utils import unwrap_fn, sync_resolve_coroutine, resolved_awaitable
-from .storages import STORAGE_MAP
+from pathlib import Path
+from typing import Any, Callable, Generic, Literal, Type, TypedDict, TypeVar, Unpack, cast, overload
+from .fn_ident import get_fn_ident
 from .print_checkpoint import print_checkpoint
+from .storages import STORAGE_MAP
+from .types import Storage
+from .utils import resolved_awaitable, sync_resolve_coroutine, unwrap_fn
 
 Fn = TypeVar("Fn", bound=Callable)
 
@@ -56,10 +56,16 @@ class CheckpointFn(Generic[Fn]):
     storage = STORAGE_MAP[checkpointer.format] if isinstance(checkpointer.format, str) else checkpointer.format
     self.checkpointer = checkpointer
     self.fn = fn
-    self.fn_hash, self.depends = get_function_hash(wrapped, self.checkpointer.capture)
+    self.fn_hash, self.depends = get_fn_ident(wrapped, self.checkpointer.capture)
     self.fn_id = f"{file_name}/{wrapped.__name__}"
     self.is_async = inspect.iscoroutinefunction(wrapped)
     self.storage = storage(checkpointer)
+
+  def reinit(self, recursive=False):
+    for depend in self.depends:
+      if recursive and isinstance(depend, CheckpointFn):
+        depend.reinit(True)
+    self.__init__(self.checkpointer, self.fn)
 
   def get_checkpoint_id(self, args: tuple, kw: dict) -> str:
     if not callable(self.checkpointer.path):
@@ -74,13 +80,13 @@ class CheckpointFn(Generic[Fn]):
   async def _store_on_demand(self, args: tuple, kw: dict, rerun: bool):
     checkpoint_id = self.get_checkpoint_id(args, kw)
     checkpoint_path = self.checkpointer.root_path / checkpoint_id
-    should_log = self.checkpointer.verbosity > 0
+    verbose = self.checkpointer.verbosity > 0
     refresh = rerun \
       or not self.storage.exists(checkpoint_path) \
       or (self.checkpointer.should_expire and self.checkpointer.should_expire(self.storage.checkpoint_date(checkpoint_path)))
 
     if refresh:
-      print_checkpoint(should_log, "MEMORIZING", checkpoint_id, "blue")
+      print_checkpoint(verbose, "MEMORIZING", checkpoint_id, "blue")
       data = self.fn(*args, **kw)
       if inspect.iscoroutine(data):
         data = await data
@@ -89,12 +95,12 @@ class CheckpointFn(Generic[Fn]):
 
     try:
       data = self.storage.load(checkpoint_path)
-      print_checkpoint(should_log, "REMEMBERED", checkpoint_id, "green")
+      print_checkpoint(verbose, "REMEMBERED", checkpoint_id, "green")
       return data
     except (EOFError, FileNotFoundError):
-      print_checkpoint(should_log, "CORRUPTED", checkpoint_id, "yellow")
-      self.storage.delete(checkpoint_path)
-      return await self._store_on_demand(args, kw, rerun)
+      pass
+    print_checkpoint(verbose, "CORRUPTED", checkpoint_id, "yellow")
+    return await self._store_on_demand(args, kw, True)
 
   def _call(self, args: tuple, kw: dict, rerun=False):
     if not self.checkpointer.when:
@@ -107,8 +113,8 @@ class CheckpointFn(Generic[Fn]):
     try:
       val = self.storage.load(checkpoint_path)
       return resolved_awaitable(val) if self.is_async else val
-    except:
-      raise CheckpointError("Could not load checkpoint")
+    except Exception as ex:
+      raise CheckpointError("Could not load checkpoint") from ex
 
   def exists(self, *args: tuple, **kw: dict) -> bool:
     return self.storage.exists(self.checkpointer.root_path / self.get_checkpoint_id(args, kw))
@@ -116,3 +122,6 @@ class CheckpointFn(Generic[Fn]):
   __call__: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw))
   rerun: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw, True))
   get: Fn = cast(Fn, lambda self, *args, **kw: self._get(args, kw))
+
+  def __repr__(self) -> str:
+    return f"<CheckpointFn {self.fn.__name__} {self.fn_hash[:6]}>"
