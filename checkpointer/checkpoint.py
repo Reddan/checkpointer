@@ -61,6 +61,9 @@ class CheckpointFn(Generic[Fn]):
     self.is_async = inspect.iscoroutinefunction(wrapped)
     self.storage = storage(checkpointer)
 
+  def reinit(self):
+    self.__init__(self.checkpointer, self.fn)
+
   def get_checkpoint_id(self, args: tuple, kw: dict) -> str:
     if not callable(self.checkpointer.path):
       # TODO: use digest size before digesting instead of truncating the hash

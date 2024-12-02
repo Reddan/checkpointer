@@ -24,8 +24,7 @@ cwd = Path.cwd()
 def extract_scope_values(code: CodeType, scope_vars: dict[str, Any], closure = False) -> dict[tuple[str, ...], Any]:
   opname = "LOAD_GLOBAL" if not closure else "LOAD_DEREF"
   scope_values_by_path: dict[tuple[str, ...], Any] = {}
-  instructions = list(dis.get_instructions(code))
-  for instr, upcoming_instrs in iterate_and_upcoming(instructions):
+  for instr, upcoming_instrs in iterate_and_upcoming(dis.get_instructions(code)):
     if instr.opname == opname:
       attrs = takewhile(lambda instr: instr.opname == "LOAD_ATTR", upcoming_instrs)
       attr_path: tuple[str, ...] = (instr.argval, *(instr.argval for instr in attrs))
@@ -56,10 +55,10 @@ def is_user_fn(candidate_fn) -> TypeGuard[Callable]:
 def append_fn_depends(checkpoint_fns: set[CheckpointFn], captured_vals_by_fn: dict[Callable, list[Any]], fn: Callable, capture: bool) -> None:
   from .checkpoint import CheckpointFn
   captured_vals = get_fn_captured_vals(fn)
-  captured_vals_by_fn[fn] = [v for v in captured_vals if capture and not callable(v)]
+  captured_vals_by_fn[fn] = [val for val in captured_vals if capture and not callable(val)]
   callables = [unwrap_fn(val, checkpoint_fn=True) for val in captured_vals if callable(val)]
+  checkpoint_fns.update(val for val in callables if isinstance(val, CheckpointFn))
   depends = {val for val in callables if is_user_fn(val)}
-  checkpoint_fns.update({val for val in callables if isinstance(val, CheckpointFn)})
   not_appended = depends - captured_vals_by_fn.keys()
   captured_vals_by_fn.update({fn: [] for fn in not_appended})
   for child_fn in not_appended:

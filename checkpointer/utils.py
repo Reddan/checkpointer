@@ -1,6 +1,5 @@
 from typing import Generator, Coroutine, Iterable, Any, cast
 from types import CellType, coroutine
-from itertools import islice
 
 class AttrDict(dict):
   def __init__(self, *args, **kwargs):
@@ -9,6 +8,9 @@ class AttrDict(dict):
 
   def __getattribute__(self, name: str) -> Any:
     return super().__getattribute__(name)
+
+  def __setattr__(self, name: str, value: Any) -> None:
+    return super().__setattr__(name, value)
 
 def unwrap_fn[T](fn: T, checkpoint_fn=False) -> T:
   from .checkpoint import CheckpointFn
@@ -33,9 +35,23 @@ def sync_resolve_coroutine[T](coroutine: Coroutine[None, None, T]) -> T:
 async def resolved_awaitable[T](value: T) -> T:
   return value
 
-def iterate_and_upcoming[T](l: list[T]) -> Iterable[tuple[T, Iterable[T]]]:
-  for i, item in enumerate(l):
-    yield item, islice(l, i + 1, None)
+class iterate_and_upcoming[T]:
+  def __init__(self, it: Iterable[T]) -> None:
+    self.it = iter(it)
+    self.previous: tuple[()] | tuple[T] = ()
+
+  def __iter__(self):
+    return self
+
+  def __next__(self) -> tuple[T, Iterable[T]]:
+    item = self.previous[0] if self.previous else next(self.it)
+    self.previous = ()
+    return item, self._tracked_iter()
+
+  def _tracked_iter(self):
+    for x in self.it:
+      self.previous = (x,)
+      yield x
 
 def get_at_attr(d: dict, keys: tuple[str, ...]) -> Any:
   try:

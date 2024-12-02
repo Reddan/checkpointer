@@ -136,6 +136,18 @@ Access cached results without recalculating:
 stored_result = expensive_function.get(4)
 ```
 
+### Refresh Function Hash
+
+When using `capture=True`, changes to captured variables are included in the function's hash to determine cache invalidation. However, `checkpointer` does not automatically update this hash during a running Python session—it recalculates between sessions or when you explicitly refresh it.
+
+Use the `reinit` method to manually refresh the function's hash within the same session:
+
+```python
+expensive_function.reinit()
+```
+
+This forces `checkpointer` to recalculate the hash of `expensive_function`, considering any changes to captured variables. It's useful when you've modified external variables that the function depends on and want the cache to reflect these changes immediately.
+
 ---
 
 ## Storage Backends
