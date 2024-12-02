@@ -61,7 +61,12 @@ class CheckpointFn(Generic[Fn]):
     self.is_async = inspect.iscoroutinefunction(wrapped)
     self.storage = storage(checkpointer)
 
-  def reinit(self):
+  def reinit(self, recursive=False):
+    # NOTE: Does not reinitialize siblings
+    if recursive:
+      for depend in self.depends:
+        if isinstance(depend, CheckpointFn):
+          depend.reinit(True)
     self.__init__(self.checkpointer, self.fn)
 
   def get_checkpoint_id(self, args: tuple, kw: dict) -> str:
