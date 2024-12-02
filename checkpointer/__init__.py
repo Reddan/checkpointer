@@ -1,6 +1,6 @@
 from .checkpoint import Checkpointer, CheckpointFn, CheckpointError
 from .types import Storage
-from .function_body import get_function_hash
+from .fn_ident import get_function_hash
 import tempfile
 
 create_checkpointer = Checkpointer

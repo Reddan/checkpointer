@@ -20,8 +20,7 @@ class PickleStorage(Storage):
       pickle.dump(data, file, -1)
 
   def load(self, path):
-    full_path = get_path(path)
-    with full_path.open("rb") as file:
+    with get_path(path).open("rb") as file:
       return pickle.load(file)
 
   def delete(self, path):
