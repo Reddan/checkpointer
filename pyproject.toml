@@ -2,9 +2,7 @@
 name = "checkpointer"
 version = "2.1.0"
 requires-python = ">=3.12"
-dependencies = [
-  "relib",
-]
+dependencies = []
 authors = [
   {name = "Hampus Hallman"}
 ]
