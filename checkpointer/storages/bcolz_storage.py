@@ -79,3 +79,6 @@ class BcolzStorage(Storage):
       shutil.rmtree(path)
     except FileNotFoundError:
       pass
+
+  def cleanup(self, invalidated=True, expired=True):
+    raise NotImplementedError("cleanup() not implemented for bcolz storage")
