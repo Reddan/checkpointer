@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 from datetime import datetime
-from ..types import Storage
+from .storage import Storage
 
 def get_data_type_str(x):
   if isinstance(x, tuple):
@@ -73,9 +73,8 @@ class BcolzStorage(Storage):
 
   def delete(self, path):
     # NOTE: Not recursive
-    metapath = get_metapath(path)
-    try:
-      shutil.rmtree(metapath)
-      shutil.rmtree(path)
-    except FileNotFoundError:
-      pass
+    shutil.rmtree(get_metapath(path), ignore_errors=True)
+    shutil.rmtree(path, ignore_errors=True)
+
+  def cleanup(self, invalidated=True, expired=True):
+    raise NotImplementedError("cleanup() not implemented for bcolz storage")

@@ -184,9 +184,9 @@ from checkpointer import checkpoint, Storage
 from datetime import datetime
 
 class CustomStorage(Storage):
+    def store(self, path, data): ...  # Save the checkpoint data
     def exists(self, path) -> bool: ...  # Check if a checkpoint exists at the given path
     def checkpoint_date(self, path) -> datetime: ...  # Return the date the checkpoint was created
-    def store(self, path, data): ...  # Save the checkpoint data
     def load(self, path): ...  # Return the checkpoint data
     def delete(self, path): ...  # Delete the checkpoint
 

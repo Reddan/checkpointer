@@ -1,5 +1,6 @@
 from __future__ import annotations
 import inspect
+import re
 from datetime import datetime
 from functools import update_wrapper
 from pathlib import Path
@@ -7,8 +8,7 @@ from typing import Any, Callable, Generic, Literal, Type, TypedDict, TypeVar, Un
 from .fn_ident import get_fn_ident
 from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
-from .storages import STORAGE_MAP
-from .types import Storage
+from .storages import STORAGE_MAP, Storage
 from .utils import resolved_awaitable, sync_resolve_coroutine, unwrap_fn
 
 Fn = TypeVar("Fn", bound=Callable)
@@ -51,15 +51,17 @@ class Checkpointer:
 class CheckpointFn(Generic[Fn]):
   def __init__(self, checkpointer: Checkpointer, fn: Fn):
     wrapped = unwrap_fn(fn)
-    file_name = Path(wrapped.__code__.co_filename).name
+    fn_file = Path(wrapped.__code__.co_filename).name
+    fn_name = re.sub(r"[^\w.]", "", wrapped.__qualname__)
     update_wrapper(cast(Callable, self), wrapped)
-    storage = STORAGE_MAP[checkpointer.format] if isinstance(checkpointer.format, str) else checkpointer.format
+    Storage = STORAGE_MAP[checkpointer.format] if isinstance(checkpointer.format, str) else checkpointer.format
     self.checkpointer = checkpointer
     self.fn = fn
     self.fn_hash, self.depends = get_fn_ident(wrapped, self.checkpointer.capture)
-    self.fn_id = f"{file_name}/{wrapped.__name__}"
+    self.fn_subdir = f"{fn_file}/{fn_name}/{self.fn_hash[:16]}"
     self.is_async = inspect.iscoroutinefunction(wrapped)
-    self.storage = storage(checkpointer)
+    self.storage = Storage(self)
+    self.cleanup = self.storage.cleanup
 
   def reinit(self, recursive=False):
     for depend in self.depends:
@@ -70,7 +72,7 @@ class CheckpointFn(Generic[Fn]):
   def get_checkpoint_id(self, args: tuple, kw: dict) -> str:
     if not callable(self.checkpointer.path):
       call_hash = ObjectHash(self.fn_hash, args, kw, digest_size=16)
-      return f"{self.fn_id}/{call_hash}"
+      return f"{self.fn_subdir}/{call_hash}"
     checkpoint_id = self.checkpointer.path(*args, **kw)
     if not isinstance(checkpoint_id, str):
       raise CheckpointError(f"path function must return a string, got {type(checkpoint_id)}")

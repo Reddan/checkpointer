@@ -1,5 +1,5 @@
 from typing import Type
-from ..types import Storage
+from .storage import Storage
 from .pickle_storage import PickleStorage
 from .memory_storage import MemoryStorage
 from .bcolz_storage import BcolzStorage
