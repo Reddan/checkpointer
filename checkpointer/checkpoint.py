@@ -1,11 +1,11 @@
 from __future__ import annotations
 import inspect
-import relib.hashing as hashing
 from datetime import datetime
 from functools import update_wrapper
 from pathlib import Path
 from typing import Any, Callable, Generic, Literal, Type, TypedDict, TypeVar, Unpack, cast, overload
 from .fn_ident import get_fn_ident
+from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
 from .storages import STORAGE_MAP
 from .types import Storage
@@ -69,8 +69,7 @@ class CheckpointFn(Generic[Fn]):
 
   def get_checkpoint_id(self, args: tuple, kw: dict) -> str:
     if not callable(self.checkpointer.path):
-      # TODO: use digest size before digesting instead of truncating the hash
-      call_hash = hashing.hash((self.fn_hash, args, kw), "blake2b")[:32]
+      call_hash = ObjectHash(self.fn_hash, args, kw, digest_size=16)
       return f"{self.fn_id}/{call_hash}"
     checkpoint_id = self.checkpointer.path(*args, **kw)
     if not isinstance(checkpoint_id, str):

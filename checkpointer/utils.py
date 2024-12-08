@@ -1,12 +1,24 @@
 import inspect
-from typing import Generator, Coroutine, Iterable, Callable, Any, cast
+import tokenize
+from contextlib import contextmanager
+from io import StringIO
 from types import coroutine
+from typing import Any, Callable, Coroutine, Generator, Iterable, cast
 
 def transpose(tuples, default_num_returns=0):
   output = tuple(zip(*tuples))
   if not output:
     return ([],) * default_num_returns
   return tuple(map(list, output))
+
+def get_fn_body(fn: Callable) -> str:
+  try:
+    source = inspect.getsource(fn)
+  except OSError:
+    return ""
+  tokens = tokenize.generate_tokens(StringIO(source).readline)
+  ignore_types = (tokenize.COMMENT, tokenize.NL)
+  return "".join("\0" + token.string for token in tokens if token.type not in ignore_types)
 
 def get_cell_contents(fn: Callable) -> Generator[tuple[str, Any], None, None]:
   for key, cell in zip(fn.__code__.co_freevars, fn.__closure__ or []):
@@ -62,6 +74,18 @@ class AttrDict(dict):
     for attr in attrs:
       d = getattr(d, attr, None)
     return d
+
+class ContextVar[T]:
+  def __init__(self, value: T):
+    self.value = value
+
+  @contextmanager
+  def set(self, value: T):
+    self.value, old = value, self.value
+    try:
+      yield
+    finally:
+      self.value = old
 
 class iterate_and_upcoming[T]:
   def __init__(self, it: Iterable[T]) -> None:

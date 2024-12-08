@@ -1,6 +1,7 @@
 import tempfile
 from .checkpoint import Checkpointer, CheckpointError, CheckpointFn
 from .fn_ident import get_function_hash
+from .object_hash import ObjectHash
 from .storages import MemoryStorage, PickleStorage
 from .types import Storage
 
