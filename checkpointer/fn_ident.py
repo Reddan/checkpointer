@@ -1,15 +1,14 @@
 from __future__ import annotations
 import dis
 import inspect
-import tokenize
-from io import StringIO
 from collections.abc import Callable
 from itertools import takewhile
 from pathlib import Path
 from typing import Any, TypeGuard, Generator, TYPE_CHECKING
 from types import CodeType, FunctionType
-from relib import transpose, hashing
+from relib import transpose
 from .utils import AttrDict, unwrap_fn, iterate_and_upcoming, get_cell_contents
+from .object_hash import ObjectHash
 
 if TYPE_CHECKING:
   from .checkpoint import CheckpointFn
@@ -35,12 +34,6 @@ def get_fn_captured_vals(fn: Callable) -> list[Any]:
   })
   vals = dict(extract_scope_values(fn.__code__, scope_vars))
   return [v for _, v in sorted(vals.items())]
-
-def get_fn_body(fn: Callable) -> str:
-  source = "".join(inspect.getsourcelines(fn)[0])
-  tokens = tokenize.generate_tokens(StringIO(source).readline)
-  ignore_types = (tokenize.COMMENT, tokenize.NL)
-  return "".join("\0" + token.string for token in tokens if token.type not in ignore_types)
 
 def is_user_fn(candidate_fn) -> TypeGuard[Callable]:
   if not isinstance(candidate_fn, FunctionType):
@@ -71,8 +64,7 @@ def get_fn_ident(fn: Callable, capture: bool) -> tuple[str, list[Callable]]:
   checkpoint_fns = sorted(checkpoint_fns, key=lambda fn: unwrap_fn(fn).__qualname__)
   checkpoint_hashes = [check.fn_hash for check in checkpoint_fns]
   depend_fns, depend_captured_vals = transpose(sorted(captured_vals_by_fn.items(), key=lambda x: x[0].__qualname__), 2)
-  fn_bodies = list(map(get_fn_body, [fn] + depend_fns))
-  fn_hash = hashing.hash((fn_bodies, depend_captured_vals, checkpoint_hashes), "blake2b")
+  fn_hash = str(ObjectHash(fn, depend_fns, depend_captured_vals, checkpoint_hashes, tolerate_errors=True))
   return fn_hash, checkpoint_fns + depend_fns
 
 def get_function_hash(fn: Callable, capture=False) -> str:
