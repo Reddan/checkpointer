@@ -5,7 +5,7 @@ from collections.abc import Callable
 from itertools import takewhile
 from pathlib import Path
 from types import CodeType, FunctionType, MethodType
-from typing import TYPE_CHECKING, Any, Generator, TypeGuard
+from typing import TYPE_CHECKING, Any, Generator, Type, TypeGuard
 from .object_hash import ObjectHash
 from .utils import AttrDict, distinct, get_cell_contents, iterate_and_upcoming, transpose, unwrap_fn
 
@@ -17,7 +17,28 @@ cwd = Path.cwd()
 def is_class(obj):
   return isinstance(obj, type)
 
+def extract_classvars(code: CodeType, scope_vars: AttrDict) -> dict[str, dict[str, Type]]:
+  attr_path: tuple[str, ...] = ()
+  scope_obj = None
+  classvars: dict[str, dict[str, Type]] = {}
+  for instr, upcoming_instrs in iterate_and_upcoming(dis.get_instructions(code)):
+    if instr.opname in scope_vars and not attr_path:
+      attrs = takewhile(lambda instr: instr.opname == "LOAD_ATTR", upcoming_instrs)
+      attr_path = (instr.opname, instr.argval, *(str(x.argval) for x in attrs))
+    elif instr.opname == "CALL":
+      obj = scope_vars.get_at(attr_path)
+      attr_path = ()
+      if is_class(obj):
+        scope_obj = obj
+    elif instr.opname in ("STORE_FAST", "STORE_DEREF") and scope_obj:
+      load_key = instr.opname.replace("STORE", "LOAD")
+      classvars.setdefault(load_key, {})[instr.argval] = scope_obj
+      scope_obj = None
+  return classvars
+
 def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Generator[tuple[tuple[str, ...], Any], None, None]:
+  classvars = extract_classvars(code, scope_vars)
+  scope_vars = scope_vars.set({k: scope_vars[k].set(v) for k, v in classvars.items()})
   for instr, upcoming_instrs in iterate_and_upcoming(dis.get_instructions(code)):
     if instr.opname in scope_vars:
       attrs = takewhile(lambda instr: instr.opname == "LOAD_ATTR", upcoming_instrs)
