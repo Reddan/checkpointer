@@ -4,10 +4,10 @@ import inspect
 from collections.abc import Callable
 from itertools import takewhile
 from pathlib import Path
-from types import CodeType, FunctionType
+from types import CodeType, FunctionType, MethodType
 from typing import TYPE_CHECKING, Any, Generator, TypeGuard
 from .object_hash import ObjectHash
-from .utils import AttrDict, get_cell_contents, iterate_and_upcoming, transpose, unwrap_fn
+from .utils import AttrDict, distinct, get_cell_contents, iterate_and_upcoming, transpose, unwrap_fn
 
 if TYPE_CHECKING:
   from .checkpoint import CheckpointFn
@@ -28,6 +28,7 @@ def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Generator[tupl
 
 def get_fn_captured_vals(fn: Callable) -> list[Any]:
   scope_vars = AttrDict({
+    "LOAD_FAST": AttrDict({"self": fn.__self__} if not TYPE_CHECKING and isinstance(fn, MethodType) else {}),
     "LOAD_DEREF": AttrDict(get_cell_contents(fn)),
     "LOAD_GLOBAL": AttrDict(fn.__globals__),
   })
@@ -35,34 +36,34 @@ def get_fn_captured_vals(fn: Callable) -> list[Any]:
   return list(vals.values())
 
 def is_user_fn(candidate_fn) -> TypeGuard[Callable]:
-  if not isinstance(candidate_fn, FunctionType):
+  if not isinstance(candidate_fn, (FunctionType, MethodType)):
     return False
   fn_path = Path(inspect.getfile(candidate_fn)).resolve()
   return cwd in fn_path.parents and ".venv" not in fn_path.parts
 
-def append_fn_depends(checkpoint_fns: set[CheckpointFn], captured_vals_by_fn: dict[Callable, list[Any]], fn: Callable, capture: bool) -> None:
+def append_fn_depends(checkpoint_fns: dict[CheckpointFn, None], captured_vals_by_fn: dict[Callable, list[Any]], fn: Callable, capture: bool) -> None:
   from .checkpoint import CheckpointFn
   captured_vals = get_fn_captured_vals(fn)
   captured_vals_by_fn[fn] = [val for val in captured_vals if capture and not callable(val)]
   callables = [unwrap_fn(val, checkpoint_fn=True) for val in captured_vals if callable(val)]
-  checkpoint_fns.update(val for val in callables if isinstance(val, CheckpointFn))
-  depends = {val for val in callables if is_user_fn(val)}
-  not_appended = depends - captured_vals_by_fn.keys()
-  captured_vals_by_fn.update({fn: [] for fn in not_appended})
-  for child_fn in not_appended:
+  checkpoint_fns.update((val, None) for val in callables if isinstance(val, CheckpointFn))
+  depends_to_append = {val for val in callables if is_user_fn(val)} - captured_vals_by_fn.keys()
+  depends_to_append = distinct(c for c in callables if c in depends_to_append)
+  captured_vals_by_fn.update({fn: [] for fn in depends_to_append})
+  for child_fn in depends_to_append:
     append_fn_depends(checkpoint_fns, captured_vals_by_fn, child_fn, capture)
 
-def get_depend_fns(fn: Callable, capture: bool) -> tuple[set[CheckpointFn], dict[Callable, list[Any]]]:
-  checkpoint_fns: set[CheckpointFn] = set()
+def get_depend_fns(fn: Callable, capture: bool) -> tuple[list[CheckpointFn], dict[Callable, list[Any]]]:
+  checkpoint_fns: dict[CheckpointFn, None] = {}
   captured_vals_by_fn: dict[Callable, list[Any]] = {}
   append_fn_depends(checkpoint_fns, captured_vals_by_fn, fn, capture)
-  return checkpoint_fns, captured_vals_by_fn
+  return list(checkpoint_fns), captured_vals_by_fn
 
 def get_fn_ident(fn: Callable, capture: bool) -> tuple[str, list[Callable]]:
   checkpoint_fns, captured_vals_by_fn = get_depend_fns(fn, capture)
-  checkpoint_fns = sorted(checkpoint_fns, key=lambda fn: unwrap_fn(fn).__qualname__)
   checkpoint_hashes = [check.fn_hash for check in checkpoint_fns]
-  depend_fns, depend_captured_vals = transpose(sorted(captured_vals_by_fn.items(), key=lambda x: x[0].__qualname__), 2)
+  depend_fns, depend_captured_vals = transpose(captured_vals_by_fn.items(), 2)
+  depend_fns = distinct(fn.__func__ if isinstance(fn, MethodType) else fn for fn in depend_fns)
   fn_hash = ObjectHash(fn, depend_fns, checkpoint_hashes).update(depend_captured_vals, tolerate_errors=True)
   return str(fn_hash), checkpoint_fns + depend_fns
 

@@ -5,6 +5,9 @@ from io import StringIO
 from types import coroutine
 from typing import Any, Callable, Coroutine, Generator, Iterable, cast
 
+def distinct[T](seq: Iterable[T]) -> list[T]:
+  return list(dict.fromkeys(seq))
+
 def transpose(tuples, default_num_returns=0):
   output = tuple(zip(*tuples))
   if not output:
