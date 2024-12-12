@@ -6,7 +6,7 @@ from itertools import takewhile
 from pathlib import Path
 from typing import Any, TypeGuard, Generator, TYPE_CHECKING
 from types import CodeType, FunctionType, MethodType
-from relib import transpose
+from relib import transpose, deepen_dict
 from .utils import AttrDict, unwrap_fn, distinct, iterate_and_upcoming, get_cell_contents
 from .object_hash import ObjectHash
 
@@ -15,7 +15,26 @@ if TYPE_CHECKING:
 
 cwd = Path.cwd()
 
+def extract_class_vars(code: CodeType, scope_vars: AttrDict) -> Generator[tuple[tuple[str, str], Any], None, None]:
+  attr_path: tuple[str, ...] = ()
+  scope_obj = None
+  for instr, upcoming_instrs in iterate_and_upcoming(dis.get_instructions(code)):
+    if instr.opname in scope_vars and not attr_path:
+      attrs = takewhile(lambda instr: instr.opname == "LOAD_ATTR", upcoming_instrs)
+      attr_path = (instr.opname, instr.argval, *(str(instr.argval) for instr in attrs))
+    elif instr.opname == "CALL":
+      obj = scope_vars.get_at(attr_path)
+      attr_path = ()
+      if isinstance(obj, type) and callable(obj):
+        scope_obj = obj
+    elif instr.opname in ("STORE_FAST", "STORE_DEREF") and scope_obj:
+      load_key = instr.opname.replace("STORE_", "LOAD_")
+      yield (load_key, instr.argval), scope_obj
+      scope_obj = None
+
 def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Generator[tuple[tuple[str, ...], Any], None, None]:
+  classvars = deepen_dict(dict(extract_class_vars(code, scope_vars)))
+  scope_vars = scope_vars.set({k: scope_vars[k].set(v) for k, v in classvars.items()})
   for instr, upcoming_instrs in iterate_and_upcoming(dis.get_instructions(code)):
     if instr.opname in scope_vars:
       attrs = takewhile(lambda instr: instr.opname == "LOAD_ATTR", upcoming_instrs)
