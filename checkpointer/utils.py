@@ -68,6 +68,9 @@ class iterate_and_upcoming[T]:
       self.previous = (x,)
       yield x
 
+def distinct[T](seq: Iterable[T]) -> list[T]:
+  return list(dict.fromkeys(seq))
+
 def get_cell_contents(fn: Callable) -> Generator[tuple[str, Any], None, None]:
   for key, cell in zip(fn.__code__.co_freevars, fn.__closure__ or []):
     try:
