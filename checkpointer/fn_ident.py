@@ -14,6 +14,9 @@ if TYPE_CHECKING:
 
 cwd = Path.cwd()
 
+def is_class(obj):
+  return isinstance(obj, type)
+
 def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Generator[tuple[tuple[str, ...], Any], None, None]:
   for instr, upcoming_instrs in iterate_and_upcoming(dis.get_instructions(code)):
     if instr.opname in scope_vars:
@@ -26,9 +29,18 @@ def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Generator[tupl
     if isinstance(const, CodeType):
       yield from extract_scope_values(const, scope_vars)
 
+def get_self_value(fn: Callable) -> type | object | None:
+  if isinstance(fn, MethodType):
+    return fn.__self__
+  parts = tuple(fn.__qualname__.split(".")[:-1])
+  cls = parts and AttrDict(fn.__globals__).get_at(parts)
+  if is_class(cls):
+    return cls
+
 def get_fn_captured_vals(fn: Callable) -> list[Any]:
+  self_value = get_self_value(fn)
   scope_vars = AttrDict({
-    "LOAD_FAST": AttrDict({"self": fn.__self__} if not TYPE_CHECKING and isinstance(fn, MethodType) else {}),
+    "LOAD_FAST": AttrDict({"self": self_value} if self_value else {}),
     "LOAD_DEREF": AttrDict(get_cell_contents(fn)),
     "LOAD_GLOBAL": AttrDict(fn.__globals__),
   })
