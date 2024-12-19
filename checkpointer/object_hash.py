@@ -1,3 +1,19 @@
+"""
+Just set a dependency to numpy?
+
+TODO: dataclass, TypedDict, NamedTuple, etc.
+TODO: hash_obj(...) - easy to make collision for
+TODO: Generators, lambdas, open files, etc.
+TODO: weakref
+
+Known problems:
+- Sliced arrays are not handled correctly
+- With capturing, errors are more likely to occur
+
+"""
+
+# inspect items failing to pickle with dill: https://stackoverflow.com/questions/30499341/establishing-why-an-object-cant-be-pickled
+
 import hashlib
 import inspect
 import tokenize
@@ -16,12 +32,21 @@ def encode_val(v: Any, *args: Any) -> str:
   return ":".join(map(str, ("val", encode_type(type(v))) + args))
 
 def make_c_contiguous(array: np.ndarray) -> np.ndarray:
+  # TODO XXX: try with complex tranposed arrays .transpose(1, 3, 0, 2) etc.
+  """
+  Attempts to make an array C-contiguous by adjusting its shape and strides,
+  without copying the data. This works only if the array has not been sliced
+  but may have been transposed or reshaped.
+  """
+  # doesn't work - always false, end up with wrong bytes
   is_sliced = array.nbytes != array.size * array.itemsize
   if array.flags.f_contiguous and not array.flags.c_contiguous:
     array = array.T
   if array.flags.c_contiguous or is_sliced:
     return np.ascontiguousarray(array)
+  # Create a C-contiguous view by reinterpreting the buffer
   strides = tuple(array.itemsize * np.cumprod((1,) + array.shape[::-1][:-1])[::-1])
+  # May need to try ... except ValueError the following and return np.ascontiguousarray(array)
   return np.lib.stride_tricks.as_strided(array, strides=strides)
 
 def get_fn_body(fn: Callable) -> str:
@@ -80,6 +105,7 @@ class ObjectHash:
         self.update_hash(encode_val(obj, obj))
 
       case str() | bytes() | bytearray() | memoryview():
+        # TODO: test bytearray & memoryview
         self.update_hash(encode_val(obj, len(obj)))
         self.update_hash(obj)
 
@@ -109,6 +135,7 @@ class ObjectHash:
         if obj.dtype.hasobject:
           self.update(obj.__reduce_ex__(PROTOCOL))
         else:
+          # self.update_hash(np.ascontiguousarray(obj.T if obj.flags.f_contiguous else obj).view(np.uint8).data)
           self.update_hash(make_c_contiguous(obj).view(np.uint8).data)
 
       case BuiltinFunctionType():
@@ -123,9 +150,11 @@ class ObjectHash:
           self.update("kwdefaults", obj.__kwdefaults__)
         if obj.__annotations__:
           self.update("annotations", obj.__annotations__)
+        # obj.__closure__ cell_contents?
 
       case MethodType():
         self.update("method", obj.__func__, obj.__self__.__class__)
+        # self.update(obj.__self__) # XXX
 
       case type():
         self.update_hash(f"type:{encode_type(obj)}")
@@ -186,4 +215,9 @@ class ObjectHash:
     elif hasattr(obj, "__dict__"):
       self.update("dict", obj.__dict__)
     else:
+      # Fallback for other objects
+      # Pickle dump?
+      # repr(obj) may contain memory addresses:
+      # <__main__.Example object at 0x10cdb39d0>
+      # should be cut off
       self.update_hash(f"custom:{repr(obj)}")
