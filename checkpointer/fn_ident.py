@@ -44,14 +44,13 @@ def is_user_fn(candidate_fn) -> TypeGuard[Callable]:
 def append_fn_depends(checkpoint_fns: dict[CheckpointFn, None], captured_vals_by_fn: dict[Callable, list[Any]], fn: Callable, capture: bool) -> None:
   from .checkpoint import CheckpointFn
   captured_vals = get_fn_captured_vals(fn)
-  captured_vals_by_fn[fn] = [val for val in captured_vals if capture and not callable(val)]
-  callables = [unwrap_fn(val, checkpoint_fn=True) for val in captured_vals if callable(val)]
-  checkpoint_fns.update((val, None) for val in callables if isinstance(val, CheckpointFn))
-  depends_to_append = {val for val in callables if is_user_fn(val)} - captured_vals_by_fn.keys()
-  depends_to_append = distinct(c for c in callables if c in depends_to_append)
-  captured_vals_by_fn.update({fn: [] for fn in depends_to_append})
-  for child_fn in depends_to_append:
-    append_fn_depends(checkpoint_fns, captured_vals_by_fn, child_fn, capture)
+  captured_vals_by_fn[fn] = [val for val in captured_vals if not callable(val)] * capture
+  child_fns = (unwrap_fn(val, checkpoint_fn=True) for val in captured_vals if callable(val))
+  for child_fn in child_fns:
+    if isinstance(child_fn, CheckpointFn):
+      checkpoint_fns[child_fn] = None
+    elif child_fn not in captured_vals_by_fn and is_user_fn(child_fn):
+      append_fn_depends(checkpoint_fns, captured_vals_by_fn, child_fn, capture)
 
 def get_depend_fns(fn: Callable, capture: bool) -> tuple[list[CheckpointFn], dict[Callable, list[Any]]]:
   checkpoint_fns: dict[CheckpointFn, None] = {}
