@@ -13,6 +13,21 @@ license = {file = "LICENSE"}
 [project.urls]
 Repository = "https://github.com/Reddan/checkpointer.git"
 
+[dependency-groups]
+dev = [
+  "numpy>=2.2.1",
+  "omg>=1.2.3",
+  "poethepoet>=0.30.0",
+  "pytest>=8.3.3",
+  "pytest-asyncio>=0.24.0",
+  "relib>=1.2.1",
+  "torch>=2.5.1",
+]
+
+[tool.poe.tasks]
+tests = "pytest checkpointer/test_checkpointer.py"
+tests-debug = "poe tests -s"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
