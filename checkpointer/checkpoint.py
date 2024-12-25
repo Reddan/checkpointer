@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from functools import update_wrapper
 from pathlib import Path
-from typing import Any, Callable, Generic, Literal, Type, TypedDict, TypeVar, Unpack, cast, overload
+from typing import Any, Callable, Generic, Iterable, Literal, Type, TypedDict, TypeVar, Unpack, cast, overload
 from .fn_ident import get_fn_ident
 from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
@@ -50,24 +50,42 @@ class Checkpointer:
 
 class CheckpointFn(Generic[Fn]):
   def __init__(self, checkpointer: Checkpointer, fn: Fn):
-    wrapped = unwrap_fn(fn)
+    self.checkpointer = checkpointer
+    self.fn = fn
+
+  def _set_ident(self, force=False):
+    if not hasattr(self, "fn_hash_raw") or force:
+      self.fn_hash_raw, self.depends = get_fn_ident(unwrap_fn(self.fn), self.checkpointer.capture)
+    return self
+
+  def _lazyinit(self):
+    wrapped = unwrap_fn(self.fn)
     fn_file = Path(wrapped.__code__.co_filename).name
     fn_name = re.sub(r"[^\w.]", "", wrapped.__qualname__)
     update_wrapper(cast(Callable, self), wrapped)
-    Storage = STORAGE_MAP[checkpointer.format] if isinstance(checkpointer.format, str) else checkpointer.format
-    self.checkpointer = checkpointer
-    self.fn = fn
-    self.fn_hash, self.depends = get_fn_ident(wrapped, self.checkpointer.capture)
+    store_format = self.checkpointer.format
+    Storage = STORAGE_MAP[store_format] if isinstance(store_format, str) else store_format
+    deep_hashes = [child._set_ident().fn_hash_raw for child in iterate_checkpoint_fns(self)]
+    self.fn_hash = str(ObjectHash().update_hash(self.fn_hash_raw, iter=deep_hashes))
     self.fn_subdir = f"{fn_file}/{fn_name}/{self.fn_hash[:16]}"
     self.is_async = inspect.iscoroutinefunction(wrapped)
     self.storage = Storage(self)
     self.cleanup = self.storage.cleanup
 
+  def __getattribute__(self, name: str) -> Any:
+    return object.__getattribute__(self, "_getattribute")(name)
+
+  def _getattribute(self, name: str) -> Any:
+    setattr(self, "_getattribute", super().__getattribute__)
+    self._lazyinit()
+    return self._getattribute(name)
+
   def reinit(self, recursive=False):
-    for depend in self.depends:
-      if recursive and isinstance(depend, CheckpointFn):
-        depend.reinit(True)
-    self.__init__(self.checkpointer, self.fn)
+    pointfns = list(iterate_checkpoint_fns(self)) if recursive else [self]
+    for pointfn in pointfns:
+      pointfn._set_ident(True)
+    for pointfn in pointfns:
+      pointfn._lazyinit()
 
   def get_checkpoint_id(self, args: tuple, kw: dict) -> str:
     if not callable(self.checkpointer.path):
@@ -126,3 +144,12 @@ class CheckpointFn(Generic[Fn]):
 
   def __repr__(self) -> str:
     return f"<CheckpointFn {self.fn.__name__} {self.fn_hash[:6]}>"
+
+def iterate_checkpoint_fns(pointfn: CheckpointFn, visited: set[CheckpointFn] = set()) -> Iterable[CheckpointFn]:
+  visited = visited or set()
+  if pointfn not in visited:
+    yield pointfn
+    visited.add(pointfn)
+    for depend in pointfn.depends:
+      if isinstance(depend, CheckpointFn):
+        yield from iterate_checkpoint_fns(depend, visited)

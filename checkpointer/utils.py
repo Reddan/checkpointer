@@ -32,7 +32,10 @@ def get_cell_contents(fn: Callable) -> Generator[tuple[str, Any], None, None]:
 
 def unwrap_fn[T: Callable](fn: T, checkpoint_fn=False) -> T:
   from .checkpoint import CheckpointFn
-  return inspect.unwrap(fn, stop=lambda x: checkpoint_fn and isinstance(x, CheckpointFn))
+  while True:
+    if (checkpoint_fn and isinstance(fn, CheckpointFn)) or not hasattr(fn, "__wrapped__"):
+      return cast(T, fn)
+    fn = getattr(fn, "__wrapped__")
 
 async def resolved_awaitable[T](value: T) -> T:
   return value
