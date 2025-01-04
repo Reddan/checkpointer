@@ -83,17 +83,6 @@ async def test_async_caching():
 
   assert result1 == result2 == 9
 
-def test_custom_path_caching():
-  def custom_path(a, b):
-    return f"add/{a}-{b}"
-
-  @checkpoint(path=custom_path)
-  def add(a, b):
-    return a + b
-
-  add(3, 4)
-  assert (checkpoint.root_path / "add/3-4.pkl").exists()
-
 def test_force_recalculation():
   @checkpoint
   def square(x: int) -> int:

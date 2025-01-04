@@ -23,7 +23,7 @@ class CheckpointerOpts(TypedDict, total=False):
   root_path: Path | str | None
   when: bool
   verbosity: Literal[0, 1]
-  path: Callable[..., str] | None
+  hash_by: Callable | None
   should_expire: Callable[[datetime], bool] | None
   capture: bool
 
@@ -33,7 +33,7 @@ class Checkpointer:
     self.root_path = Path(opts.get("root_path", DEFAULT_DIR) or ".")
     self.when = opts.get("when", True)
     self.verbosity = opts.get("verbosity", 1)
-    self.path = opts.get("path")
+    self.hash_by = opts.get("hash_by")
     self.should_expire = opts.get("should_expire")
     self.capture = opts.get("capture", False)
 
@@ -66,7 +66,7 @@ class CheckpointFn(Generic[Fn]):
     store_format = self.checkpointer.format
     Storage = STORAGE_MAP[store_format] if isinstance(store_format, str) else store_format
     deep_hashes = [child._set_ident().fn_hash_raw for child in iterate_checkpoint_fns(self)]
-    self.fn_hash = str(ObjectHash().update_hash(self.fn_hash_raw, iter=deep_hashes))
+    self.fn_hash = str(ObjectHash().write_text(self.fn_hash_raw, iter=deep_hashes))
     self.fn_subdir = f"{fn_file}/{fn_name}/{self.fn_hash[:16]}"
     self.is_async = inspect.iscoroutinefunction(wrapped)
     self.storage = Storage(self)
@@ -88,13 +88,9 @@ class CheckpointFn(Generic[Fn]):
       pointfn._lazyinit()
 
   def get_checkpoint_id(self, args: tuple, kw: dict) -> str:
-    if not callable(self.checkpointer.path):
-      call_hash = ObjectHash(self.fn_hash, args, kw, digest_size=16)
-      return f"{self.fn_subdir}/{call_hash}"
-    checkpoint_id = self.checkpointer.path(*args, **kw)
-    if not isinstance(checkpoint_id, str):
-      raise CheckpointError(f"path function must return a string, got {type(checkpoint_id)}")
-    return checkpoint_id
+    hash_params = [self.checkpointer.hash_by(*args, **kw)] if self.checkpointer.hash_by else (args, kw)
+    call_hash = ObjectHash(self.fn_hash, *hash_params, digest_size=16)
+    return f"{self.fn_subdir}/{call_hash}"
 
   async def _store_on_demand(self, args: tuple, kw: dict, rerun: bool):
     checkpoint_id = self.get_checkpoint_id(args, kw)

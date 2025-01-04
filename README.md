@@ -11,6 +11,7 @@ Adding or removing `@checkpoint` doesn't change how your code works. You can app
 - ⏲️ **Custom Expiration Logic**: Automatically invalidate old checkpoints.
 - 📂 **Flexible Path Configuration**: Control where checkpoints are stored.
 - 📦 **Captured Variables Handling**: Optionally include captured variables in cache invalidation.
+- ⚡ **Custom Argument Hashing**: Override argument hashing for speed or specialized hashing logic.
 
 ---
 
@@ -44,9 +45,9 @@ When you use `@checkpoint`, the function's **arguments** (`args`, `kwargs`) are 
 
 Additionally, `checkpointer` ensures that caches are invalidated when a function's implementation or any of its dependencies change. Each function is assigned a hash based on:
 
-1. **Its source code**: Changes to the function's code update its hash.
-2. **Dependent functions**: If a function calls others, changes in those dependencies will also update the hash.
-3. **Captured variables**: (Optional) If `capture=True`, changes to captured variables and global variables will also update the hash.
+1. **Function Code**: The hash updates when the function’s own source code changes.
+2. **Dependencies**: If the function calls other user-defined functions, changes in those dependencies also update the hash.
+3. **External Variables** *(with `capture=True`)*: Any global or closure-based variables used by the function are included in its hash, so changes to those variables also trigger cache invalidation.
 
 ### Example: Cache Invalidation
 
@@ -138,21 +139,19 @@ stored_result = expensive_function.get(4)
 
 ### Refresh Function Hash
 
-When using `capture=True`, changes to captured variables are included in the function's hash to determine cache invalidation. However, `checkpointer` does not automatically update this hash during a running Python session—it recalculates between sessions or when you explicitly refresh it.
-
-Use the `reinit` method to manually refresh the function's hash within the same session:
+If `capture=True`, you might need to re-hash a function during the same Python session. For that, call `reinit`:
 
 ```python
 expensive_function.reinit()
 ```
 
-This forces `checkpointer` to recalculate the hash of `expensive_function`, considering any changes to captured variables. It's useful when you've modified external variables that the function depends on and want the cache to reflect these changes immediately.
+This tells `checkpointer` to recalculate the function hash, reflecting changes in captured variables.
 
 ---
 
 ## Storage Backends
 
-`checkpointer` works with both built-in and custom storage backends, so you can use what's provided or roll your own as needed.
+`checkpointer` works with built-in and custom storage backends, so you can use what's provided or roll your own as needed.
 
 ### Built-In Backends
 
@@ -184,10 +183,10 @@ from checkpointer import checkpoint, Storage
 from datetime import datetime
 
 class CustomStorage(Storage):
-    def store(self, path, data): ...  # Save the checkpoint data
-    def exists(self, path) -> bool: ...  # Check if a checkpoint exists at the given path
-    def checkpoint_date(self, path) -> datetime: ...  # Return the date the checkpoint was created
-    def load(self, path): ...  # Return the checkpoint data
+    def exists(self, path) -> bool: ...  # Check if a checkpoint exists
+    def checkpoint_date(self, path) -> datetime: ...  # Get the checkpoint's timestamp
+    def store(self, path, data): ...  # Save data to the checkpoint
+    def load(self, path): ...  # Load data from the checkpoint
     def delete(self, path): ...  # Delete the checkpoint
 
 @checkpoint(format=CustomStorage)
@@ -195,21 +194,21 @@ def custom_cached(x: int):
     return x ** 2
 ```
 
-Using a custom backend lets you tailor storage to your application, whether it involves databases, cloud storage, or custom file formats.
+Use a custom backend to integrate with databases, cloud storage, or specialized file formats.
 
 ---
 
 ## Configuration Options ⚙️
 
-| Option          | Type                              | Default              | Description                                    |
-|-----------------|-----------------------------------|----------------------|------------------------------------------------|
-| `capture`       | `bool`                            | `False`              | Include captured variables in function hashes. |
-| `format`        | `"pickle"`, `"memory"`, `Storage` | `"pickle"`           | Storage backend format.                        |
-| `root_path`     | `Path`, `str`, or `None`          | ~/.cache/checkpoints | Root directory for storing checkpoints.        |
-| `when`          | `bool`                            | `True`               | Enable or disable checkpointing.               |
-| `verbosity`     | `0` or `1`                        | `1`                  | Logging verbosity.                             |
-| `path`          | `Callable[..., str]`              | `None`               | Custom path for checkpoint storage.            |
-| `should_expire` | `Callable[[datetime], bool]`      | `None`               | Custom expiration logic.                       |
+| Option          | Type                                | Default              | Description                                               |
+|-----------------|-------------------------------------|----------------------|-----------------------------------------------------------|
+| `capture`       | `bool`                              | `False`              | Include captured variables in function hashes.            |
+| `format`        | `"pickle"`, `"memory"`, `Storage`   | `"pickle"`           | Storage backend format.                                   |
+| `root_path`     | `Path`, `str`, or `None`            | ~/.cache/checkpoints | Root directory for storing checkpoints.                   |
+| `when`          | `bool`                              | `True`               | Enable or disable checkpointing.                          |
+| `verbosity`     | `0` or `1`                          | `1`                  | Logging verbosity.                                        |
+| `should_expire` | `Callable[[datetime], bool]`        | `None`               | Custom expiration logic.                                  |
+| `hash_by`       | `Callable[..., Any]`                | `None`               | Custom function that transforms arguments before hashing. |
 
 ---
 

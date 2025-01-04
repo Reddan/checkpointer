@@ -22,7 +22,7 @@ with suppress(Exception):
 def encode_type(t: type | FunctionType) -> str:
   return f"{t.__module__}:{t.__qualname__}"
 
-def encode_val(v: Any) -> str:
+def encode_type_of(v: Any) -> str:
   return encode_type(type(v))
 
 class ObjectHashError(Exception):
@@ -31,11 +31,11 @@ class ObjectHashError(Exception):
     self.obj = obj
 
 class ObjectHash:
-  def __init__(self, *obj: Any, iter: Iterable[Any] = [], digest_size=64, tolerate_errors=False) -> None:
+  def __init__(self, *objs: Any, iter: Iterable[Any] = (), digest_size=64, tolerate_errors=False) -> None:
     self.hash = hashlib.blake2b(digest_size=digest_size)
     self.current: dict[int, int] = {}
     self.tolerate_errors = ContextVar(tolerate_errors)
-    self.update(iter=chain(obj, iter))
+    self.update(iter=chain(objs, iter))
 
   def copy(self) -> "ObjectHash":
     new = ObjectHash(tolerate_errors=self.tolerate_errors.value)
@@ -47,15 +47,21 @@ class ObjectHash:
 
   __str__ = hexdigest
 
-  def update_hash(self, *data: bytes | str, iter: Iterable[bytes | str] = []) -> "ObjectHash":
+  def nested_hash(self, *objs: Any) -> str:
+    return ObjectHash(iter=objs, tolerate_errors=self.tolerate_errors.value).hexdigest()
+
+  def write_bytes(self, *data: bytes, iter: Iterable[bytes] = ()) -> "ObjectHash":
     for d in chain(data, iter):
-      self.hash.update(d.encode() if isinstance(d, str) else d)
+      self.hash.update(d)
     return self
 
-  def header(self, *args: Any) -> "ObjectHash":
-    return self.update_hash(":".join(map(str, args)))
+  def write_text(self, *data: str, iter: Iterable[str] = ()) -> "ObjectHash":
+    return self.write_bytes(iter=(d.encode() for d in chain(data, iter)))
 
-  def update(self, *objs: Any, iter: Iterable[Any] = [], tolerate_errors: bool | None=None) -> "ObjectHash":
+  def header(self, *args: Any) -> "ObjectHash":
+    return self.write_bytes(":".join(map(str, args)).encode())
+
+  def update(self, *objs: Any, iter: Iterable[Any] = (), tolerate_errors: bool | None=None) -> "ObjectHash":
     with nullcontext() if tolerate_errors is None else self.tolerate_errors.set(tolerate_errors):
       for obj in chain(objs, iter):
         try:
@@ -73,19 +79,20 @@ class ObjectHash:
         self.header("null")
 
       case bool() | int() | float() | complex() | Decimal() | ObjectHash():
-        self.header("number", encode_val(obj), obj)
+        self.header("number", encode_type_of(obj), obj)
 
       case str() | bytes() | bytearray() | memoryview():
-        self.header("bytes", encode_val(obj), len(obj)).update_hash(obj)
+        b = obj.encode() if isinstance(obj, str) else obj
+        self.header("bytes", encode_type_of(obj), len(b)).write_bytes(b)
 
       case set() | frozenset():
-        self.header("set", encode_val(obj), len(obj))
         try:
           items = sorted(obj)
+          header = "set"
         except:
-          self.header("unsortable")
-          items = sorted(str(ObjectHash(item, tolerate_errors=self.tolerate_errors.value)) for item in obj)
-        self.update(iter=items)
+          items = sorted(map(self.nested_hash, obj))
+          header = "set-unsortable"
+        self.header(header, encode_type_of(obj), len(obj)).update(iter=items)
 
       case TypeVar():
         self.header("TypeVar").update(obj.__name__, obj.__bound__, obj.__constraints__, obj.__contravariant__, obj.__covariant__)
@@ -112,7 +119,7 @@ class ObjectHash:
         self.header("generator", obj.__qualname__)._update_iterator(obj)
 
       case io.TextIOWrapper() | io.FileIO() | io.BufferedRandom() | io.BufferedWriter() | io.BufferedReader():
-        self.header("file", encode_val(obj)).update(obj.name, obj.mode, obj.tell())
+        self.header("file", encode_type_of(obj)).update(obj.name, obj.mode, obj.tell())
 
       case type():
         self.header("type", encode_type(obj))
@@ -121,20 +128,20 @@ class ObjectHash:
         self.header("dtype").update(obj.__class__, obj.descr)
 
       case _ if np and isinstance(obj, np.ndarray):
-        self.header("ndarray", encode_val(obj), obj.shape, obj.strides).update(obj.dtype)
+        self.header("ndarray", encode_type_of(obj), obj.shape, obj.strides).update(obj.dtype)
         if obj.dtype.hasobject:
           self.update(obj.__reduce_ex__(PROTOCOL))
         else:
           array = np.ascontiguousarray(obj if obj.base is None else obj.base).view(np.uint8)
-          self.update_hash(array.data)
+          self.write_bytes(array.data)
 
       case _ if torch and isinstance(obj, torch.Tensor):
-        self.header("tensor", encode_val(obj), obj.dtype, tuple(obj.shape), obj.stride(), obj.device)
+        self.header("tensor", encode_type_of(obj), obj.dtype, tuple(obj.shape), obj.stride(), obj.device)
         if obj.device.type != "cpu":
           obj = obj.cpu()
         storage = obj.storage()
         buffer = (ctypes.c_ubyte * storage.nbytes()).from_address(storage.data_ptr())
-        self.update_hash(memoryview(buffer))
+        self.write_bytes(memoryview(buffer))
 
       case _ if id(obj) in self.current:
         self.header("circular", self.current[id(obj)])
@@ -144,36 +151,36 @@ class ObjectHash:
           self.current[id(obj)] = len(self.current)
           match obj:
             case list() | tuple():
-              self.header("list", encode_val(obj), len(obj)).update(iter=obj)
+              self.header("list", encode_type_of(obj), len(obj)).update(iter=obj)
             case dict():
               try:
                 items = sorted(obj.items())
+                header = "dict"
               except:
-                items = sorted((str(ObjectHash(key, tolerate_errors=self.tolerate_errors.value)), val) for key, val in obj.items())
-              self.header("dict", encode_val(obj), len(obj)).update(iter=chain.from_iterable(items))
+                items = sorted((self.nested_hash(key), val) for key, val in obj.items())
+                header = "dict-unsortable"
+              self.header(header, encode_type_of(obj), len(obj)).update(iter=chain.from_iterable(items))
             case _:
               self._update_object(obj)
         finally:
           del self.current[id(obj)]
 
-  def _update_iterator(self, obj: Iterable) -> None:
-    self.header("iterator", encode_val(obj)).update(iter=obj).header(b"iterator-end")
+  def _update_iterator(self, obj: Iterable) -> "ObjectHash":
+    return self.header("iterator", encode_type_of(obj)).update(iter=obj).header("iterator-end")
 
   def _update_object(self, obj: object) -> "ObjectHash":
-    self.header("instance", encode_val(obj))
-    try:
-      reduced = obj.__reduce_ex__(PROTOCOL) if hasattr(obj, "__reduce_ex__") else obj.__reduce__()
-    except:
-      reduced = None
+    self.header("instance", encode_type_of(obj))
+    reduced = None
+    with suppress(Exception):
+      reduced = obj.__reduce_ex__(PROTOCOL)
+    with suppress(Exception):
+      reduced = reduced or obj.__reduce__()
     if isinstance(reduced, str):
       return self.header("reduce-str").update(reduced)
     if reduced:
       reduced = list(reduced)
       it = reduced.pop(3) if len(reduced) >= 4 else None
-      self.header("reduce").update(reduced)
-      if it is not None:
-        self._update_iterator(it)
-      return self
+      return self.header("reduce").update(reduced)._update_iterator(it or ())
     if state := hasattr(obj, "__getstate__") and obj.__getstate__():
       return self.header("getstate").update(state)
     if len(getattr(obj, "__slots__", [])):
