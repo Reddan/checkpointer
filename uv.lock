@@ -1,9 +1,10 @@
 version = 1
+revision = 1
 requires-python = ">=3.12"
 
 [[package]]
 name = "checkpointer"
-version = "2.6.0"
+version = "2.6.1"
 source = { editable = "." }
 
 [package.dev-dependencies]

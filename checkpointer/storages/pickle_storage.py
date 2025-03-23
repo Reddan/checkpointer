@@ -18,6 +18,7 @@ class PickleStorage(Storage):
     return get_path(path).exists()
 
   def checkpoint_date(self, path):
+    # Should use st_atime/access time?
     return datetime.fromtimestamp(get_path(path).stat().st_mtime)
 
   def load(self, path):

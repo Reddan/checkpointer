@@ -23,7 +23,7 @@ def get_fn_body(fn: Callable) -> str:
   ignore_types = (tokenize.COMMENT, tokenize.NL)
   return "".join("\0" + token.string for token in tokens if token.type not in ignore_types)
 
-def get_cell_contents(fn: Callable) -> Generator[tuple[str, Any], None, None]:
+def get_cell_contents(fn: Callable) -> Iterable[tuple[str, Any]]:
   for key, cell in zip(fn.__code__.co_freevars, fn.__closure__ or []):
     try:
       yield (key, cell.cell_contents)

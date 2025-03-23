@@ -206,7 +206,7 @@ Use a custom backend to integrate with databases, cloud storage, or specialized 
 | `format`        | `"pickle"`, `"memory"`, `Storage`   | `"pickle"`           | Storage backend format.                                   |
 | `root_path`     | `Path`, `str`, or `None`            | ~/.cache/checkpoints | Root directory for storing checkpoints.                   |
 | `when`          | `bool`                              | `True`               | Enable or disable checkpointing.                          |
-| `verbosity`     | `0` or `1`                          | `1`                  | Logging verbosity.                                        |
+| `verbosity`     | `0`, `1` or `2`                     | `1`                  | Logging verbosity.                                        |
 | `should_expire` | `Callable[[datetime], bool]`        | `None`               | Custom expiration logic.                                  |
 | `hash_by`       | `Callable[..., Any]`                | `None`               | Custom function that transforms arguments before hashing. |
 

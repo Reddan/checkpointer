@@ -4,7 +4,7 @@ from collections.abc import Callable
 from itertools import takewhile
 from pathlib import Path
 from types import CodeType, FunctionType, MethodType
-from typing import Any, Generator, Type, TypeGuard
+from typing import Any, Iterable, Type, TypeGuard
 from .object_hash import ObjectHash
 from .utils import AttrDict, distinct, get_cell_contents, iterate_and_upcoming, transpose, unwrap_fn
 
@@ -33,7 +33,7 @@ def extract_classvars(code: CodeType, scope_vars: AttrDict) -> dict[str, dict[st
       scope_obj = None
   return classvars
 
-def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Generator[tuple[tuple[str, ...], Any], None, None]:
+def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Iterable[tuple[tuple[str, ...], Any]]:
   classvars = extract_classvars(code, scope_vars)
   scope_vars = scope_vars.set({k: scope_vars[k].set(v) for k, v in classvars.items()})
   for instr, upcoming_instrs in iterate_and_upcoming(dis.get_instructions(code)):
