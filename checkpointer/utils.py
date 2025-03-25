@@ -3,9 +3,12 @@ import tokenize
 from contextlib import contextmanager
 from io import StringIO
 from types import coroutine
-from typing import Any, Callable, Coroutine, Generator, Iterable, cast
+from typing import Any, Callable, Coroutine, Generator, Generic, Iterable, TypeVar, cast
 
-def distinct[T](seq: Iterable[T]) -> list[T]:
+T = TypeVar("T")
+T_Callable = TypeVar("T_Callable", bound=Callable)
+
+def distinct(seq: Iterable[T]) -> list[T]:
   return list(dict.fromkeys(seq))
 
 def transpose(tuples, default_num_returns=0):
@@ -30,22 +33,22 @@ def get_cell_contents(fn: Callable) -> Iterable[tuple[str, Any]]:
     except ValueError:
       pass
 
-def unwrap_fn[T: Callable](fn: T, checkpoint_fn=False) -> T:
+def unwrap_fn(fn: T_Callable, checkpoint_fn=False) -> T_Callable:
   from .checkpoint import CheckpointFn
   while True:
     if (checkpoint_fn and isinstance(fn, CheckpointFn)) or not hasattr(fn, "__wrapped__"):
-      return cast(T, fn)
+      return cast(T_Callable, fn)
     fn = getattr(fn, "__wrapped__")
 
-async def resolved_awaitable[T](value: T) -> T:
+async def resolved_awaitable(value: T) -> T:
   return value
 
 @coroutine
-def coroutine_as_generator[T](coroutine: Coroutine[None, None, T]) -> Generator[None, None, T]:
+def coroutine_as_generator(coroutine: Coroutine[None, None, T]) -> Generator[None, None, T]:
   val = yield from coroutine
   return val
 
-def sync_resolve_coroutine[T](coroutine: Coroutine[None, None, T]) -> T:
+def sync_resolve_coroutine(coroutine: Coroutine[None, None, T]) -> T:
   gen = cast(Generator, coroutine_as_generator(coroutine))
   try:
     while True:
@@ -81,7 +84,7 @@ class AttrDict(dict):
       d = getattr(d, attr, None)
     return d
 
-class ContextVar[T]:
+class ContextVar(Generic[T]):
   def __init__(self, value: T):
     self.value = value
 
@@ -93,7 +96,7 @@ class ContextVar[T]:
     finally:
       self.value = old
 
-class iterate_and_upcoming[T]:
+class iterate_and_upcoming(Generic[T]):
   def __init__(self, it: Iterable[T]) -> None:
     self.it = iter(it)
     self.previous: tuple[()] | tuple[T] = ()

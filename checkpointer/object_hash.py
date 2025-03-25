@@ -2,22 +2,31 @@ import ctypes
 import hashlib
 import io
 import re
+import sys
 from collections.abc import Iterable
 from contextlib import nullcontext, suppress
 from decimal import Decimal
 from itertools import chain
 from pickle import HIGHEST_PROTOCOL as PROTOCOL
 from types import BuiltinFunctionType, FunctionType, GeneratorType, MethodType, ModuleType, UnionType
-from typing import Any, TypeAliasType, TypeVar
+from typing import Any, TypeVar
 from .utils import ContextVar, get_fn_body
 
 np, torch = None, None
 
 with suppress(Exception):
   import numpy as np
-
 with suppress(Exception):
   import torch
+
+class _Never:
+  def __getattribute__(self, _: str):
+    pass
+
+if sys.version_info >= (3, 12):
+  from typing import TypeAliasType
+else:
+  TypeAliasType = _Never
 
 def encode_type(t: type | FunctionType) -> str:
   return f"{t.__module__}:{t.__qualname__}"

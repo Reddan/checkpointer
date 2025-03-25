@@ -49,4 +49,4 @@ colored = colored_ if allow_color() else noop
 
 def print_checkpoint(should_log: bool, title: str, text: str, color: Color):
   if should_log:
-    print(f"{colored(f" {title} ", "grey", color)} {colored(text, color)}")
+    print(f'{colored(f" {title} ", "grey", color)} {colored(text, color)}')
