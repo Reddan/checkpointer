@@ -26,7 +26,7 @@ class CheckpointerOpts(TypedDict, total=False):
   hash_by: Callable | None
   should_expire: Callable[[datetime], bool] | None
   capture: bool
-  fn_hash: str | None
+  fn_hash: ObjectHash | None
 
 class Checkpointer:
   def __init__(self, **opts: Unpack[CheckpointerOpts]):
@@ -61,14 +61,14 @@ class CheckpointFn(Generic[Fn]):
     return self
 
   def _lazyinit(self):
+    params = self.checkpointer
     wrapped = unwrap_fn(self.fn)
     fn_file = Path(wrapped.__code__.co_filename).name
     fn_name = re.sub(r"[^\w.]", "", wrapped.__qualname__)
     update_wrapper(cast(Callable, self), wrapped)
-    store_format = self.checkpointer.format
-    Storage = STORAGE_MAP[store_format] if isinstance(store_format, str) else store_format
+    Storage = STORAGE_MAP[params.format] if isinstance(params.format, str) else params.format
     deep_hashes = [child._set_ident().fn_hash_raw for child in iterate_checkpoint_fns(self)]
-    self.fn_hash = self.checkpointer.fn_hash or str(ObjectHash().write_text(self.fn_hash_raw, *deep_hashes))
+    self.fn_hash = str(params.fn_hash or ObjectHash().write_text(self.fn_hash_raw, *deep_hashes))
     self.fn_subdir = f"{fn_file}/{fn_name}/{self.fn_hash[:16]}"
     self.is_async: bool = self.fn.is_async if isinstance(self.fn, CheckpointFn) else inspect.iscoroutinefunction(self.fn)
     self.storage = Storage(self)
@@ -91,20 +91,21 @@ class CheckpointFn(Generic[Fn]):
     return self
 
   def get_checkpoint_id(self, args: tuple, kw: dict) -> str:
-    hash_params = [self.checkpointer.hash_by(*args, **kw)] if self.checkpointer.hash_by else (args, kw)
-    call_hash = ObjectHash(self.fn_hash, *hash_params, digest_size=16)
+    hash_by = self.checkpointer.hash_by
+    hash_params = hash_by(*args, **kw) if hash_by else (args, kw)
+    call_hash = ObjectHash(hash_params, digest_size=16)
     return f"{self.fn_subdir}/{call_hash}"
 
   async def _store_on_demand(self, args: tuple, kw: dict, rerun: bool):
+    params = self.checkpointer
     checkpoint_id = self.get_checkpoint_id(args, kw)
-    checkpoint_path = self.checkpointer.root_path / checkpoint_id
-    verbosity = self.checkpointer.verbosity
+    checkpoint_path = params.root_path / checkpoint_id
     refresh = rerun \
       or not self.storage.exists(checkpoint_path) \
-      or (self.checkpointer.should_expire and self.checkpointer.should_expire(self.storage.checkpoint_date(checkpoint_path)))
+      or (params.should_expire and params.should_expire(self.storage.checkpoint_date(checkpoint_path)))
 
     if refresh:
-      print_checkpoint(verbosity >= 1, "MEMORIZING", checkpoint_id, "blue")
+      print_checkpoint(params.verbosity >= 1, "MEMORIZING", checkpoint_id, "blue")
       data = self.fn(*args, **kw)
       if inspect.iscoroutine(data):
         data = await data
@@ -113,11 +114,11 @@ class CheckpointFn(Generic[Fn]):
 
     try:
       data = self.storage.load(checkpoint_path)
-      print_checkpoint(verbosity >= 2, "REMEMBERED", checkpoint_id, "green")
+      print_checkpoint(params.verbosity >= 2, "REMEMBERED", checkpoint_id, "green")
       return data
     except (EOFError, FileNotFoundError):
       pass
-    print_checkpoint(verbosity >= 1, "CORRUPTED", checkpoint_id, "yellow")
+    print_checkpoint(params.verbosity >= 1, "CORRUPTED", checkpoint_id, "yellow")
     return await self._store_on_demand(args, kw, True)
 
   def _call(self, args: tuple, kw: dict, rerun=False):
