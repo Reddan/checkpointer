@@ -6,7 +6,7 @@ from . import checkpoint
 from .checkpoint import CheckpointError
 from .utils import AttrDict
 
-def global_multiply(a, b):
+def global_multiply(a: int, b: int) -> int:
   return a * b
 
 @pytest.fixture(autouse=True)
@@ -27,15 +27,15 @@ def test_basic_caching():
 
 def test_cache_invalidation():
   @checkpoint
-  def multiply(a, b):
+  def multiply(a: int, b: int):
     return a * b
 
   @checkpoint
-  def helper(x):
+  def helper(x: int):
     return multiply(x + 1, 2)
 
   @checkpoint
-  def compute(a, b):
+  def compute(a: int, b: int):
     return helper(a) + helper(b)
 
   result1 = compute(3, 4)
@@ -46,7 +46,7 @@ def test_layered_caching():
 
   @checkpoint(format="memory")
   @dev_checkpoint
-  def expensive_function(x):
+  def expensive_function(x: int):
     return x ** 2
 
   assert expensive_function(4) == 16
@@ -95,7 +95,7 @@ def test_force_recalculation():
 def test_multi_layer_decorator():
   @checkpoint(format="memory")
   @checkpoint(format="pickle")
-  def add(a, b):
+  def add(a: int, b: int) -> int:
     return a + b
 
   assert add(2, 3) == 5
@@ -124,18 +124,18 @@ def test_capture():
   assert test_a.fn_hash != init_hash_a
 
 def test_depends():
-  def multiply_wrapper(a, b):
+  def multiply_wrapper(a: int, b: int) -> int:
     return global_multiply(a, b)
 
-  def helper(a, b):
+  def helper(a: int, b: int) -> int:
     return multiply_wrapper(a + 1, b + 1)
 
   @checkpoint
-  def test_a(a, b):
+  def test_a(a: int, b: int) -> int:
     return helper(a, b)
 
   @checkpoint
-  def test_b(a, b):
+  def test_b(a: int, b: int) -> int:
     return test_a(a, b) + multiply_wrapper(a, b)
 
   assert set(test_a.depends) == {test_a.fn, helper, multiply_wrapper, global_multiply}
@@ -143,17 +143,17 @@ def test_depends():
 
 def test_lazy_init():
   @checkpoint
-  def fn1(x):
+  def fn1(x: object) -> object:
     return fn2(x)
 
   @checkpoint
-  def fn2(x):
+  def fn2(x: object) -> object:
     return fn1(x)
 
-  assert type(object.__getattribute__(fn1, "_getattribute")) == MethodType
+  assert type(object.__getattribute__(fn1, "_getattribute")) is MethodType
   with pytest.raises(AttributeError):
     object.__getattribute__(fn1, "fn_hash")
   assert fn1.fn_hash == object.__getattribute__(fn1, "fn_hash")
-  assert type(object.__getattribute__(fn1, "_getattribute")) == MethodWrapperType
+  assert type(object.__getattribute__(fn1, "_getattribute")) is MethodWrapperType
   assert set(fn1.depends) == {fn1.fn, fn2}
   assert set(fn2.depends) == {fn1, fn2.fn}

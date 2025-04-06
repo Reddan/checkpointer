@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from functools import update_wrapper
 from pathlib import Path
-from typing import Any, Callable, Generic, Iterable, Literal, Type, TypedDict, TypeVar, Unpack, cast, overload
+from typing import Any, Callable, Generic, Iterable, Literal, ParamSpec, Type, TypedDict, TypeVar, Unpack, cast, overload
 from .fn_ident import get_fn_ident
 from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
@@ -12,6 +12,8 @@ from .storages import STORAGE_MAP, Storage
 from .utils import resolved_awaitable, sync_resolve_coroutine, unwrap_fn
 
 Fn = TypeVar("Fn", bound=Callable)
+P = ParamSpec("P")
+R = TypeVar("R")
 
 DEFAULT_DIR = Path.home() / ".cache/checkpoints"
 
@@ -127,20 +129,21 @@ class CheckpointFn(Generic[Fn]):
     coroutine = self._store_on_demand(args, kw, rerun)
     return coroutine if self.is_async else sync_resolve_coroutine(coroutine)
 
-  def _get(self, args, kw) -> Any:
+  def get(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> R: # type: ignore
+    self = cast(CheckpointFn, self)
     checkpoint_path = self.checkpointer.root_path / self.get_checkpoint_id(args, kw)
     try:
       val = self.storage.load(checkpoint_path)
-      return resolved_awaitable(val) if self.is_async else val
+      return cast(R, resolved_awaitable(val) if self.is_async else val)
     except Exception as ex:
       raise CheckpointError("Could not load checkpoint") from ex
 
-  def exists(self, *args: tuple, **kw: dict) -> bool:
+  def exists(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> bool: # type: ignore
+    self = cast(CheckpointFn, self)
     return self.storage.exists(self.checkpointer.root_path / self.get_checkpoint_id(args, kw))
 
   __call__: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw))
   rerun: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw, True))
-  get: Fn = cast(Fn, lambda self, *args, **kw: self._get(args, kw))
 
   def __repr__(self) -> str:
     return f"<CheckpointFn {self.fn.__name__} {self.fn_hash[:6]}>"

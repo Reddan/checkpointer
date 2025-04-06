@@ -9,7 +9,8 @@ create_checkpointer = Checkpointer
 checkpoint = Checkpointer()
 capture_checkpoint = Checkpointer(capture=True)
 memory_checkpoint = Checkpointer(format="memory", verbosity=0)
-tmp_checkpoint = Checkpointer(root_path=tempfile.gettempdir() + "/checkpoints")
+tmp_checkpoint = Checkpointer(root_path=f"{tempfile.gettempdir()}/checkpoints")
+static_checkpoint = Checkpointer(fn_hash=ObjectHash())
 
 def cleanup_all(invalidated=True, expired=True):
   for obj in gc.get_objects():

@@ -56,6 +56,9 @@ class ObjectHash:
 
   __str__ = hexdigest
 
+  def __eq__(self, value: object) -> bool:
+    return isinstance(value, ObjectHash) and str(self) == str(value)
+
   def nested_hash(self, *objs: Any) -> str:
     return ObjectHash(iter=objs, tolerate_errors=self.tolerate_errors.value).hexdigest()
 
