@@ -4,12 +4,12 @@ import re
 from datetime import datetime
 from functools import update_wrapper
 from pathlib import Path
-from typing import Any, Callable, Generic, Iterable, Literal, ParamSpec, Type, TypedDict, TypeVar, Unpack, cast, overload
+from typing import Any, Awaitable, Callable, Generic, Iterable, Literal, ParamSpec, Type, TypedDict, TypeVar, Unpack, cast, overload
 from .fn_ident import get_fn_ident
 from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
 from .storages import STORAGE_MAP, Storage
-from .utils import resolved_awaitable, sync_resolve_coroutine, unwrap_fn
+from .utils import AwaitableValue, unwrap_fn
 
 Fn = TypeVar("Fn", bound=Callable)
 P = ParamSpec("P")
@@ -72,7 +72,6 @@ class CheckpointFn(Generic[Fn]):
     deep_hashes = [child._set_ident().fn_hash_raw for child in iterate_checkpoint_fns(self)]
     self.fn_hash = str(params.fn_hash or ObjectHash().write_text(self.fn_hash_raw, *deep_hashes))
     self.fn_subdir = f"{fn_file}/{fn_name}/{self.fn_hash[:16]}"
-    self.is_async: bool = self.fn.is_async if isinstance(self.fn, CheckpointFn) else inspect.iscoroutinefunction(self.fn)
     self.storage = Storage(self)
     self.cleanup = self.storage.cleanup
 
@@ -98,7 +97,12 @@ class CheckpointFn(Generic[Fn]):
     call_hash = ObjectHash(hash_params, digest_size=16)
     return f"{self.fn_subdir}/{call_hash}"
 
-  async def _store_on_demand(self, args: tuple, kw: dict, rerun: bool):
+  async def _resolve_awaitable(self, checkpoint_path: Path, awaitable: Awaitable):
+    data = await awaitable
+    self.storage.store(checkpoint_path, AwaitableValue(data))
+    return data
+
+  def _store_on_demand(self, args: tuple, kw: dict, rerun: bool):
     params = self.checkpointer
     checkpoint_id = self.get_checkpoint_id(args, kw)
     checkpoint_path = params.root_path / checkpoint_id
@@ -109,10 +113,11 @@ class CheckpointFn(Generic[Fn]):
     if refresh:
       print_checkpoint(params.verbosity >= 1, "MEMORIZING", checkpoint_id, "blue")
       data = self.fn(*args, **kw)
-      if inspect.iscoroutine(data):
-        data = await data
-      self.storage.store(checkpoint_path, data)
-      return data
+      if inspect.isawaitable(data):
+        return self._resolve_awaitable(checkpoint_path, data)
+      else:
+        self.storage.store(checkpoint_path, data)
+        return data
 
     try:
       data = self.storage.load(checkpoint_path)
@@ -121,29 +126,32 @@ class CheckpointFn(Generic[Fn]):
     except (EOFError, FileNotFoundError):
       pass
     print_checkpoint(params.verbosity >= 1, "CORRUPTED", checkpoint_id, "yellow")
-    return await self._store_on_demand(args, kw, True)
+    return self._store_on_demand(args, kw, True)
 
   def _call(self, args: tuple, kw: dict, rerun=False):
     if not self.checkpointer.when:
       return self.fn(*args, **kw)
-    coroutine = self._store_on_demand(args, kw, rerun)
-    return coroutine if self.is_async else sync_resolve_coroutine(coroutine)
+    return self._store_on_demand(args, kw, rerun)
 
-  def get(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> R: # type: ignore
-    self = cast(CheckpointFn, self)
+  __call__: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw))
+  rerun: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw, True))
+
+  @overload
+  def get(self: Callable[P, Awaitable[R]], *args: P.args, **kw: P.kwargs) -> R: ...
+  @overload
+  def get(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> R: ...
+
+  def get(self, *args, **kw):
     checkpoint_path = self.checkpointer.root_path / self.get_checkpoint_id(args, kw)
     try:
-      val = self.storage.load(checkpoint_path)
-      return cast(R, resolved_awaitable(val) if self.is_async else val)
+      data = self.storage.load(checkpoint_path)
+      return data.value if isinstance(data, AwaitableValue) else data
     except Exception as ex:
       raise CheckpointError("Could not load checkpoint") from ex
 
   def exists(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> bool: # type: ignore
     self = cast(CheckpointFn, self)
     return self.storage.exists(self.checkpointer.root_path / self.get_checkpoint_id(args, kw))
-
-  __call__: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw))
-  rerun: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw, True))
 
   def __repr__(self) -> str:
     return f"<CheckpointFn {self.fn.__name__} {self.fn_hash[:6]}>"

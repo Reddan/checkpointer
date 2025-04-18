@@ -79,9 +79,10 @@ async def test_async_caching():
     return x ** 2
 
   result1 = await async_square(3)
-  result2 = await async_square.get(3)
+  result2 = await async_square(3)
+  result3 = async_square.get(3)
 
-  assert result1 == result2 == 9
+  assert result1 == result2 == result3 == 9
 
 def test_force_recalculation():
   @checkpoint

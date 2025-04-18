@@ -235,7 +235,7 @@ async def main():
     result2 = await async_compute_sum(3, 7)
     print(result2)  # Outputs 10
 
-    result3 = await async_compute_sum.get(3, 7)
+    result3 = async_compute_sum.get(3, 7)
     print(result3)  # Outputs 10
 
 asyncio.run(main())

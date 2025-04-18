@@ -2,11 +2,10 @@ import inspect
 import tokenize
 from contextlib import contextmanager
 from io import StringIO
-from types import coroutine
-from typing import Any, Callable, Coroutine, Generator, Generic, Iterable, TypeVar, cast
+from typing import Any, Callable, Generic, Iterable, TypeVar, cast
 
 T = TypeVar("T")
-T_Callable = TypeVar("T_Callable", bound=Callable)
+Fn = TypeVar("Fn", bound=Callable)
 
 def distinct(seq: Iterable[T]) -> list[T]:
   return list(dict.fromkeys(seq))
@@ -33,28 +32,20 @@ def get_cell_contents(fn: Callable) -> Iterable[tuple[str, Any]]:
     except ValueError:
       pass
 
-def unwrap_fn(fn: T_Callable, checkpoint_fn=False) -> T_Callable:
+def unwrap_fn(fn: Fn, checkpoint_fn=False) -> Fn:
   from .checkpoint import CheckpointFn
   while True:
     if (checkpoint_fn and isinstance(fn, CheckpointFn)) or not hasattr(fn, "__wrapped__"):
-      return cast(T_Callable, fn)
+      return cast(Fn, fn)
     fn = getattr(fn, "__wrapped__")
 
-async def resolved_awaitable(value: T) -> T:
-  return value
+class AwaitableValue:
+  def __init__(self, value):
+    self.value = value
 
-@coroutine
-def coroutine_as_generator(coroutine: Coroutine[None, None, T]) -> Generator[None, None, T]:
-  val = yield from coroutine
-  return val
-
-def sync_resolve_coroutine(coroutine: Coroutine[None, None, T]) -> T:
-  gen = cast(Generator, coroutine_as_generator(coroutine))
-  try:
-    while True:
-      next(gen)
-  except StopIteration as ex:
-    return ex.value
+  def __await__(self):
+    yield
+    return self.value
 
 class AttrDict(dict):
   def __init__(self, *args, **kwargs):
