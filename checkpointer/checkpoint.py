@@ -70,8 +70,8 @@ class CheckpointFn(Generic[Fn]):
     update_wrapper(cast(Callable, self), wrapped)
     Storage = STORAGE_MAP[params.format] if isinstance(params.format, str) else params.format
     deep_hashes = [child._set_ident().fn_hash_raw for child in iterate_checkpoint_fns(self)]
-    self.fn_hash = str(params.fn_hash or ObjectHash().write_text(self.fn_hash_raw, *deep_hashes))
-    self.fn_subdir = f"{fn_file}/{fn_name}/{self.fn_hash[:16]}"
+    self.fn_hash = str(params.fn_hash or ObjectHash(digest_size=16).write_text(self.fn_hash_raw, *deep_hashes))
+    self.fn_subdir = f"{fn_file}/{fn_name}/{self.fn_hash[:32]}"
     self.storage = Storage(self)
     self.cleanup = self.storage.cleanup
 
@@ -102,10 +102,14 @@ class CheckpointFn(Generic[Fn]):
     self.storage.store(checkpoint_path, AwaitableValue(data))
     return data
 
-  def _store_on_demand(self, args: tuple, kw: dict, rerun: bool):
+  def _call(self, args: tuple, kw: dict, rerun=False):
     params = self.checkpointer
+    if not params.when:
+      return self.fn(*args, **kw)
+
     checkpoint_id = self.get_checkpoint_id(args, kw)
     checkpoint_path = params.root_path / checkpoint_id
+
     refresh = rerun \
       or not self.storage.exists(checkpoint_path) \
       or (params.should_expire and params.should_expire(self.storage.checkpoint_date(checkpoint_path)))
@@ -126,12 +130,7 @@ class CheckpointFn(Generic[Fn]):
     except (EOFError, FileNotFoundError):
       pass
     print_checkpoint(params.verbosity >= 1, "CORRUPTED", checkpoint_id, "yellow")
-    return self._store_on_demand(args, kw, True)
-
-  def _call(self, args: tuple, kw: dict, rerun=False):
-    if not self.checkpointer.when:
-      return self.fn(*args, **kw)
-    return self._store_on_demand(args, kw, rerun)
+    return self._call(args, kw, True)
 
   __call__: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw))
   rerun: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw, True))
