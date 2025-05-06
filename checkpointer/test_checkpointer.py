@@ -142,7 +142,7 @@ def test_depends():
   assert set(test_a.depends) == {test_a.fn, helper, multiply_wrapper, global_multiply}
   assert set(test_b.depends) == {test_b.fn, test_a, multiply_wrapper, global_multiply}
 
-def test_lazy_init():
+def test_lazy_init_1():
   @checkpoint
   def fn1(x: object) -> object:
     return fn2(x)
@@ -151,10 +151,21 @@ def test_lazy_init():
   def fn2(x: object) -> object:
     return fn1(x)
 
-  assert type(object.__getattribute__(fn1, "_getattribute")) is MethodType
-  with pytest.raises(AttributeError):
-    object.__getattribute__(fn1, "fn_hash")
-  assert fn1.fn_hash == object.__getattribute__(fn1, "fn_hash")
-  assert type(object.__getattribute__(fn1, "_getattribute")) is MethodWrapperType
+  assert set(fn1.depends) == {fn1.fn, fn2}
+  assert set(fn2.depends) == {fn1, fn2.fn}
+
+def test_lazy_init_2():
+  @checkpoint
+  def fn1(x: object) -> object:
+    return fn2(x)
+
+  assert set(fn1.depends) == {fn1.fn}
+
+  @checkpoint
+  def fn2(x: object) -> object:
+    return fn1(x)
+
+  assert set(fn1.depends) == {fn1.fn}
+  fn1.reinit()
   assert set(fn1.depends) == {fn1.fn, fn2}
   assert set(fn2.depends) == {fn1, fn2.fn}

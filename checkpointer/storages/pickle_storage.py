@@ -29,7 +29,7 @@ class PickleStorage(Storage):
     get_path(path).unlink(missing_ok=True)
 
   def cleanup(self, invalidated=True, expired=True):
-    version_path = self.checkpointer.root_path.resolve() / self.checkpoint_fn.fn_subdir
+    version_path = self.checkpointer.root_path.resolve() / self.checkpoint_fn.fn_dir / self.checkpoint_fn.fn_hash
     fn_path = version_path.parent
     if invalidated:
       old_dirs = [path for path in fn_path.iterdir() if path.is_dir() and path != version_path]

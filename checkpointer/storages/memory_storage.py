@@ -10,7 +10,7 @@ def get_short_path(path: Path):
 
 class MemoryStorage(Storage):
   def get_dict(self):
-    return item_map.setdefault(self.checkpointer.root_path / self.checkpoint_fn.fn_subdir, {})
+    return item_map.setdefault(self.checkpointer.root_path / self.checkpoint_fn.fn_dir / self.checkpoint_fn.fn_hash, {})
 
   def store(self, path, data):
     self.get_dict()[get_short_path(path)] = (datetime.now(), data)
@@ -25,10 +25,10 @@ class MemoryStorage(Storage):
     return self.get_dict()[get_short_path(path)][1]
 
   def delete(self, path):
-    del self.get_dict()[get_short_path(path)]
+    self.get_dict().pop(get_short_path(path), None)
 
   def cleanup(self, invalidated=True, expired=True):
-    curr_key = self.checkpointer.root_path / self.checkpoint_fn.fn_subdir
+    curr_key = self.checkpointer.root_path / self.checkpoint_fn.fn_dir / self.checkpoint_fn.fn_hash
     for key, calldict in list(item_map.items()):
       if key.parent == curr_key.parent:
         if invalidated and key != curr_key:

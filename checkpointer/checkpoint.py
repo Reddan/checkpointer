@@ -1,10 +1,11 @@
 from __future__ import annotations
 import inspect
 import re
+from contextlib import suppress
 from datetime import datetime
-from functools import update_wrapper
+from functools import cached_property, update_wrapper
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Generic, Iterable, Literal, ParamSpec, Type, TypedDict, TypeVar, Unpack, cast, overload
+from typing import Awaitable, Callable, Generic, Iterable, Literal, ParamSpec, Type, TypedDict, TypeVar, Unpack, cast, overload
 from .fn_ident import get_fn_ident
 from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
@@ -54,48 +55,50 @@ class Checkpointer:
 
 class CheckpointFn(Generic[Fn]):
   def __init__(self, checkpointer: Checkpointer, fn: Fn):
-    self.checkpointer = checkpointer
-    self.fn = fn
-
-  def _set_ident(self, force=False):
-    if not hasattr(self, "fn_hash_raw") or force:
-      self.fn_hash_raw, self.depends = get_fn_ident(unwrap_fn(self.fn), self.checkpointer.capture)
-    return self
-
-  def _lazyinit(self):
-    params = self.checkpointer
-    wrapped = unwrap_fn(self.fn)
+    wrapped = unwrap_fn(fn)
     fn_file = Path(wrapped.__code__.co_filename).name
     fn_name = re.sub(r"[^\w.]", "", wrapped.__qualname__)
+    Storage = STORAGE_MAP[checkpointer.format] if isinstance(checkpointer.format, str) else checkpointer.format
     update_wrapper(cast(Callable, self), wrapped)
-    Storage = STORAGE_MAP[params.format] if isinstance(params.format, str) else params.format
-    deep_hashes = [child._set_ident().fn_hash_raw for child in iterate_checkpoint_fns(self)]
-    self.fn_hash = str(params.fn_hash or ObjectHash(digest_size=16).write_text(self.fn_hash_raw, *deep_hashes))
-    self.fn_subdir = f"{fn_file}/{fn_name}/{self.fn_hash[:32]}"
+    self.checkpointer = checkpointer
+    self.fn = fn
     self.storage = Storage(self)
     self.cleanup = self.storage.cleanup
+    self.fn_dir = f"{fn_file}/{fn_name}"
 
-  def __getattribute__(self, name: str) -> Any:
-    return object.__getattribute__(self, "_getattribute")(name)
+  @cached_property
+  def ident_tuple(self) -> tuple[str, list[Callable]]:
+    return get_fn_ident(unwrap_fn(self.fn), self.checkpointer.capture)
 
-  def _getattribute(self, name: str) -> Any:
-    setattr(self, "_getattribute", super().__getattribute__)
-    self._lazyinit()
-    return self._getattribute(name)
+  @property
+  def fn_hash_raw(self) -> str:
+    return self.ident_tuple[0]
+
+  @property
+  def depends(self) -> list[Callable]:
+    return self.ident_tuple[1]
+
+  @cached_property
+  def fn_hash(self) -> str:
+    fn_hash = self.checkpointer.fn_hash
+    deep_hashes = [depend.fn_hash_raw for depend in self.deep_depends()]
+    return str(fn_hash or ObjectHash(digest_size=16).write_text(self.fn_hash_raw, *deep_hashes))[:32]
 
   def reinit(self, recursive=False) -> CheckpointFn[Fn]:
-    pointfns = list(iterate_checkpoint_fns(self)) if recursive else [self]
-    for pointfn in pointfns:
-      pointfn._set_ident(True)
-    for pointfn in pointfns:
-      pointfn._lazyinit()
+    depends = list(self.deep_depends()) if recursive else [self]
+    for depend in depends:
+      with suppress(AttributeError):
+        del depend.ident_tuple, depend.fn_hash
+      depend.ident_tuple
+    for depend in depends:
+      depend.fn_hash
     return self
 
   def get_checkpoint_id(self, args: tuple, kw: dict) -> str:
     hash_by = self.checkpointer.hash_by
     hash_params = hash_by(*args, **kw) if hash_by else (args, kw)
     call_hash = ObjectHash(hash_params, digest_size=16)
-    return f"{self.fn_subdir}/{call_hash}"
+    return f"{self.fn_dir}/{self.fn_hash}/{call_hash}"
 
   async def _resolve_awaitable(self, checkpoint_path: Path, awaitable: Awaitable):
     data = await awaitable
@@ -152,14 +155,18 @@ class CheckpointFn(Generic[Fn]):
     self = cast(CheckpointFn, self)
     return self.storage.exists(self.checkpointer.root_path / self.get_checkpoint_id(args, kw))
 
+  def delete(self: Callable[P, R], *args: P.args, **kw: P.kwargs): # type: ignore
+    self = cast(CheckpointFn, self)
+    self.storage.delete(self.checkpointer.root_path / self.get_checkpoint_id(args, kw))
+
   def __repr__(self) -> str:
     return f"<CheckpointFn {self.fn.__name__} {self.fn_hash[:6]}>"
 
-def iterate_checkpoint_fns(pointfn: CheckpointFn, visited: set[CheckpointFn] = set()) -> Iterable[CheckpointFn]:
-  visited = visited or set()
-  if pointfn not in visited:
-    yield pointfn
-    visited.add(pointfn)
-    for depend in pointfn.depends:
-      if isinstance(depend, CheckpointFn):
-        yield from iterate_checkpoint_fns(depend, visited)
+  def deep_depends(self, visited: set[CheckpointFn] = set()) -> Iterable[CheckpointFn]:
+    if self not in visited:
+      yield self
+      visited = visited or set()
+      visited.add(self)
+      for depend in self.depends:
+        if isinstance(depend, CheckpointFn):
+          yield from depend.deep_depends(visited)
