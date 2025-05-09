@@ -1,4 +1,4 @@
-# checkpointer &middot; [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Reddan/checkpointer/blob/master/LICENSE) [![pypi](https://img.shields.io/pypi/v/checkpointer)](https://pypi.org/project/checkpointer/) [![pypi](https://img.shields.io/pypi/pyversions/checkpointer)](https://pypi.org/project/checkpointer/)
+# checkpointer · [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Reddan/checkpointer/blob/master/LICENSE) [![pypi](https://img.shields.io/pypi/v/checkpointer)](https://pypi.org/project/checkpointer/) [![pypi](https://img.shields.io/pypi/pyversions/checkpointer)](https://pypi.org/project/checkpointer/)
 
 `checkpointer` is a Python library for memoizing function results. It provides a decorator-based API with support for multiple storage backends. Use it for computationally expensive operations where caching can save time, or during development to avoid waiting for redundant computations.
 
@@ -183,11 +183,11 @@ from checkpointer import checkpoint, Storage
 from datetime import datetime
 
 class CustomStorage(Storage):
-    def exists(self, path) -> bool: ...  # Check if a checkpoint exists
-    def checkpoint_date(self, path) -> datetime: ...  # Get the checkpoint's timestamp
-    def store(self, path, data): ...  # Save data to the checkpoint
-    def load(self, path): ...  # Load data from the checkpoint
-    def delete(self, path): ...  # Delete the checkpoint
+    def exists(self, call_id) -> bool: ...  # Check if a checkpoint exists
+    def checkpoint_date(self, call_id) -> datetime: ...  # Get the checkpoint's timestamp
+    def store(self, call_id, data): ...  # Save data to the checkpoint
+    def load(self, call_id): ...  # Load data from the checkpoint
+    def delete(self, call_id): ...  # Delete the checkpoint
 
 @checkpoint(format=CustomStorage)
 def custom_cached(x: int):

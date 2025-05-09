@@ -62,9 +62,9 @@ class CheckpointFn(Generic[Fn]):
     update_wrapper(cast(Callable, self), wrapped)
     self.checkpointer = checkpointer
     self.fn = fn
+    self.fn_dir = f"{fn_file}/{fn_name}"
     self.storage = Storage(self)
     self.cleanup = self.storage.cleanup
-    self.fn_dir = f"{fn_file}/{fn_name}"
 
   @cached_property
   def ident_tuple(self) -> tuple[str, list[Callable]]:
@@ -89,20 +89,18 @@ class CheckpointFn(Generic[Fn]):
     for depend in depends:
       with suppress(AttributeError):
         del depend.ident_tuple, depend.fn_hash
-      depend.ident_tuple
     for depend in depends:
       depend.fn_hash
     return self
 
-  def get_checkpoint_id(self, args: tuple, kw: dict) -> str:
+  def get_call_id(self, args: tuple, kw: dict) -> str:
     hash_by = self.checkpointer.hash_by
     hash_params = hash_by(*args, **kw) if hash_by else (args, kw)
-    call_hash = ObjectHash(hash_params, digest_size=16)
-    return f"{self.fn_dir}/{self.fn_hash}/{call_hash}"
+    return str(ObjectHash(hash_params, digest_size=16))
 
-  async def _resolve_awaitable(self, checkpoint_path: Path, awaitable: Awaitable):
+  async def _resolve_awaitable(self, checkpoint_id: str, awaitable: Awaitable):
     data = await awaitable
-    self.storage.store(checkpoint_path, AwaitableValue(data))
+    self.storage.store(checkpoint_id, AwaitableValue(data))
     return data
 
   def _call(self, args: tuple, kw: dict, rerun=False):
@@ -110,29 +108,29 @@ class CheckpointFn(Generic[Fn]):
     if not params.when:
       return self.fn(*args, **kw)
 
-    checkpoint_id = self.get_checkpoint_id(args, kw)
-    checkpoint_path = params.root_path / checkpoint_id
+    call_id = self.get_call_id(args, kw)
+    call_id_long = f"{self.fn_dir}/{self.fn_hash}/{call_id}"
 
     refresh = rerun \
-      or not self.storage.exists(checkpoint_path) \
-      or (params.should_expire and params.should_expire(self.storage.checkpoint_date(checkpoint_path)))
+      or not self.storage.exists(call_id) \
+      or (params.should_expire and params.should_expire(self.storage.checkpoint_date(call_id)))
 
     if refresh:
-      print_checkpoint(params.verbosity >= 1, "MEMORIZING", checkpoint_id, "blue")
+      print_checkpoint(params.verbosity >= 1, "MEMORIZING", call_id_long, "blue")
       data = self.fn(*args, **kw)
       if inspect.isawaitable(data):
-        return self._resolve_awaitable(checkpoint_path, data)
+        return self._resolve_awaitable(call_id, data)
       else:
-        self.storage.store(checkpoint_path, data)
+        self.storage.store(call_id, data)
         return data
 
     try:
-      data = self.storage.load(checkpoint_path)
-      print_checkpoint(params.verbosity >= 2, "REMEMBERED", checkpoint_id, "green")
+      data = self.storage.load(call_id)
+      print_checkpoint(params.verbosity >= 2, "REMEMBERED", call_id_long, "green")
       return data
     except (EOFError, FileNotFoundError):
       pass
-    print_checkpoint(params.verbosity >= 1, "CORRUPTED", checkpoint_id, "yellow")
+    print_checkpoint(params.verbosity >= 1, "CORRUPTED", call_id_long, "yellow")
     return self._call(args, kw, True)
 
   __call__: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw))
@@ -144,20 +142,20 @@ class CheckpointFn(Generic[Fn]):
   def get(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> R: ...
 
   def get(self, *args, **kw):
-    checkpoint_path = self.checkpointer.root_path / self.get_checkpoint_id(args, kw)
+    call_id = self.get_call_id(args, kw)
     try:
-      data = self.storage.load(checkpoint_path)
+      data = self.storage.load(call_id)
       return data.value if isinstance(data, AwaitableValue) else data
     except Exception as ex:
       raise CheckpointError("Could not load checkpoint") from ex
 
   def exists(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> bool: # type: ignore
     self = cast(CheckpointFn, self)
-    return self.storage.exists(self.checkpointer.root_path / self.get_checkpoint_id(args, kw))
+    return self.storage.exists(self.get_call_id(args, kw))
 
   def delete(self: Callable[P, R], *args: P.args, **kw: P.kwargs): # type: ignore
     self = cast(CheckpointFn, self)
-    self.storage.delete(self.checkpointer.root_path / self.get_checkpoint_id(args, kw))
+    self.storage.delete(self.get_call_id(args, kw))
 
   def __repr__(self) -> str:
     return f"<CheckpointFn {self.fn.__name__} {self.fn_hash[:6]}>"

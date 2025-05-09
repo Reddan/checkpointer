@@ -5,35 +5,32 @@ from .storage import Storage
 
 item_map: dict[Path, dict[str, tuple[datetime, Any]]] = {}
 
-def get_short_path(path: Path):
-  return path.parts[-1]
-
 class MemoryStorage(Storage):
   def get_dict(self):
-    return item_map.setdefault(self.checkpointer.root_path / self.checkpoint_fn.fn_dir / self.checkpoint_fn.fn_hash, {})
+    return item_map.setdefault(self.dir(), {})
 
-  def store(self, path, data):
-    self.get_dict()[get_short_path(path)] = (datetime.now(), data)
+  def store(self, call_id, data):
+    self.get_dict()[call_id] = (datetime.now(), data)
 
-  def exists(self, path):
-    return get_short_path(path) in self.get_dict()
+  def exists(self, call_id):
+    return call_id in self.get_dict()
 
-  def checkpoint_date(self, path):
-    return self.get_dict()[get_short_path(path)][0]
+  def checkpoint_date(self, call_id):
+    return self.get_dict()[call_id][0]
 
-  def load(self, path):
-    return self.get_dict()[get_short_path(path)][1]
+  def load(self, call_id):
+    return self.get_dict()[call_id][1]
 
-  def delete(self, path):
-    self.get_dict().pop(get_short_path(path), None)
+  def delete(self, call_id):
+    self.get_dict().pop(call_id, None)
 
   def cleanup(self, invalidated=True, expired=True):
-    curr_key = self.checkpointer.root_path / self.checkpoint_fn.fn_dir / self.checkpoint_fn.fn_hash
+    curr_key = self.dir()
     for key, calldict in list(item_map.items()):
       if key.parent == curr_key.parent:
         if invalidated and key != curr_key:
           del item_map[key]
         elif expired and self.checkpointer.should_expire:
-          for callid, (date, _) in list(calldict.items()):
+          for call_id, (date, _) in list(calldict.items()):
             if self.checkpointer.should_expire(date):
-              del calldict[callid]
+              del calldict[call_id]
