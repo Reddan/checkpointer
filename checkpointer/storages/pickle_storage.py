@@ -5,7 +5,7 @@ from .storage import Storage
 
 class PickleStorage(Storage):
   def get_path(self, call_id: str):
-    return self.dir() / f"{call_id}.pkl"
+    return self.fn_dir() / f"{call_id}.pkl"
 
   def store(self, call_id, data):
     path = self.get_path(call_id)
@@ -28,7 +28,7 @@ class PickleStorage(Storage):
     self.get_path(call_id).unlink(missing_ok=True)
 
   def cleanup(self, invalidated=True, expired=True):
-    version_path = self.dir()
+    version_path = self.fn_dir()
     fn_path = version_path.parent
     if invalidated:
       old_dirs = [path for path in fn_path.iterdir() if path.is_dir() and path != version_path]

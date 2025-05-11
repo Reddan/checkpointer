@@ -115,7 +115,11 @@ The `@checkpoint` decorator accepts the following parameters to customize its be
 
 ### 🗄️ Custom Storage Backends
 
-For integration with databases, cloud storage, or custom serialization, you can implement your own storage backend by inheriting from `checkpointer.Storage` and implementing its abstract methods:
+For integration with databases, cloud storage, or custom serialization, implement your own storage backend by inheriting from `checkpointer.Storage` and implementing its abstract methods.
+
+Within custom storage methods, `call_id` identifies calls by arguments. Use `self.fn_id()` to get the function's unique identity (name + hash/version), crucial for organizing stored checkpoints (e.g., by function version). Access global `Checkpointer` config via `self.checkpointer`.
+
+#### Example: Custom Storage Backend
 
 ```python
 from checkpointer import checkpoint, Storage
@@ -123,20 +127,14 @@ from datetime import datetime
 
 class MyCustomStorage(Storage):
     def exists(self, call_id):
-        # Check if a checkpoint exists for the given call_id
-        ...
-    def checkpoint_date(self, call_id):
-        # Return the timestamp of the checkpoint
-        ...
-    def store(self, call_id, data):
-        # Store the serialized data for the call_id
-        ...
-    def load(self, call_id):
-        # Load and return the serialized data for the call_id
-        ...
-    def delete(self, call_id):
-        # Delete the checkpoint for the call_id
-        ...
+        # Example: Constructing a path based on function ID and call ID
+        fn_dir = self.checkpointer.root_path / self.fn_id()
+        return (fn_dir / call_id).exists()
+
+    def checkpoint_date(self, call_id): ...
+    def store(self, call_id, data): ...
+    def load(self, call_id): ...
+    def delete(self, call_id): ...
 
 @checkpoint(format=MyCustomStorage)
 def custom_cached_function(x: int):

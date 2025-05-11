@@ -7,7 +7,7 @@ item_map: dict[Path, dict[str, tuple[datetime, Any]]] = {}
 
 class MemoryStorage(Storage):
   def get_dict(self):
-    return item_map.setdefault(self.dir(), {})
+    return item_map.setdefault(self.fn_dir(), {})
 
   def store(self, call_id, data):
     self.get_dict()[call_id] = (datetime.now(), data)
@@ -25,7 +25,7 @@ class MemoryStorage(Storage):
     self.get_dict().pop(call_id, None)
 
   def cleanup(self, invalidated=True, expired=True):
-    curr_key = self.dir()
+    curr_key = self.fn_dir()
     for key, calldict in list(item_map.items()):
       if key.parent == curr_key.parent:
         if invalidated and key != curr_key:

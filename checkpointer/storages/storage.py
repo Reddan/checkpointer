@@ -14,8 +14,11 @@ class Storage:
     self.checkpointer = checkpoint_fn.checkpointer
     self.checkpoint_fn = checkpoint_fn
 
-  def dir(self) -> Path:
-    return self.checkpointer.root_path / self.checkpoint_fn.fn_dir / self.checkpoint_fn.fn_hash
+  def fn_id(self) -> str:
+    return f"{self.checkpoint_fn.fn_dir}/{self.checkpoint_fn.fn_hash}"
+
+  def fn_dir(self) -> Path:
+    return self.checkpointer.root_path / self.fn_id()
 
   def store(self, call_id: str, data: Any) -> None: ...
 
