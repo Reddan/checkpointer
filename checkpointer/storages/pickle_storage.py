@@ -34,11 +34,11 @@ class PickleStorage(Storage):
       old_dirs = [path for path in fn_path.iterdir() if path.is_dir() and path != version_path]
       for path in old_dirs:
         shutil.rmtree(path)
-      print(f"Removed {len(old_dirs)} invalidated directories for {self.checkpoint_fn.__qualname__}")
+      print(f"Removed {len(old_dirs)} invalidated directories for {self.cached_fn.__qualname__}")
     if expired and self.checkpointer.should_expire:
       count = 0
-      for pkl_path in fn_path.rglob("*.pkl"):
+      for pkl_path in fn_path.glob("**/*.pkl"):
         if self.checkpointer.should_expire(self.checkpoint_date(pkl_path.stem)):
           count += 1
           self.delete(pkl_path.stem)
-      print(f"Removed {count} expired checkpoints for {self.checkpoint_fn.__qualname__}")
+      print(f"Removed {count} expired checkpoints for {self.cached_fn.__qualname__}")

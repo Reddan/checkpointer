@@ -4,18 +4,18 @@ from pathlib import Path
 from datetime import datetime
 
 if TYPE_CHECKING:
-  from ..checkpoint import Checkpointer, CheckpointFn
+  from ..checkpoint import Checkpointer, CachedFunction
 
 class Storage:
   checkpointer: Checkpointer
-  checkpoint_fn: CheckpointFn
+  cached_fn: CachedFunction
 
-  def __init__(self, checkpoint_fn: CheckpointFn):
-    self.checkpointer = checkpoint_fn.checkpointer
-    self.checkpoint_fn = checkpoint_fn
+  def __init__(self, cached_fn: CachedFunction):
+    self.checkpointer = cached_fn.checkpointer
+    self.cached_fn = cached_fn
 
   def fn_id(self) -> str:
-    return f"{self.checkpoint_fn.fn_dir}/{self.checkpoint_fn.fn_hash}"
+    return f"{self.cached_fn.fn_dir}/{self.cached_fn.fn_hash}"
 
   def fn_dir(self) -> Path:
     return self.checkpointer.root_path / self.fn_id()

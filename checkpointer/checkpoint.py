@@ -1,7 +1,6 @@
 from __future__ import annotations
 import inspect
 import re
-from contextlib import suppress
 from datetime import datetime
 from functools import cached_property, update_wrapper
 from pathlib import Path
@@ -43,17 +42,17 @@ class Checkpointer:
     self.fn_hash = opts.get("fn_hash")
 
   @overload
-  def __call__(self, fn: Fn, **override_opts: Unpack[CheckpointerOpts]) -> CheckpointFn[Fn]: ...
+  def __call__(self, fn: Fn, **override_opts: Unpack[CheckpointerOpts]) -> CachedFunction[Fn]: ...
   @overload
   def __call__(self, fn: None=None, **override_opts: Unpack[CheckpointerOpts]) -> Checkpointer: ...
-  def __call__(self, fn: Fn | None=None, **override_opts: Unpack[CheckpointerOpts]) -> Checkpointer | CheckpointFn[Fn]:
+  def __call__(self, fn: Fn | None=None, **override_opts: Unpack[CheckpointerOpts]) -> Checkpointer | CachedFunction[Fn]:
     if override_opts:
       opts = CheckpointerOpts(**{**self.__dict__, **override_opts})
       return Checkpointer(**opts)(fn)
 
-    return CheckpointFn(self, fn) if callable(fn) else self
+    return CachedFunction(self, fn) if callable(fn) else self
 
-class CheckpointFn(Generic[Fn]):
+class CachedFunction(Generic[Fn]):
   def __init__(self, checkpointer: Checkpointer, fn: Fn):
     wrapped = unwrap_fn(fn)
     fn_file = Path(wrapped.__code__.co_filename).name
@@ -80,15 +79,15 @@ class CheckpointFn(Generic[Fn]):
 
   @cached_property
   def fn_hash(self) -> str:
-    fn_hash = self.checkpointer.fn_hash
     deep_hashes = [depend.fn_hash_raw for depend in self.deep_depends()]
-    return str(fn_hash or ObjectHash(digest_size=16).write_text(self.fn_hash_raw, *deep_hashes))[:32]
+    fn_hash = ObjectHash(digest_size=16).write_text(self.fn_hash_raw, *deep_hashes)
+    return str(self.checkpointer.fn_hash or fn_hash)[:32]
 
-  def reinit(self, recursive=False) -> CheckpointFn[Fn]:
+  def reinit(self, recursive=False) -> CachedFunction[Fn]:
     depends = list(self.deep_depends()) if recursive else [self]
     for depend in depends:
-      with suppress(AttributeError):
-        del depend.ident_tuple, depend.fn_hash
+      self.__dict__.pop("fn_hash", None)
+      self.__dict__.pop("ident_tuple", None)
     for depend in depends:
       depend.fn_hash
     return self
@@ -150,21 +149,21 @@ class CheckpointFn(Generic[Fn]):
       raise CheckpointError("Could not load checkpoint") from ex
 
   def exists(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> bool: # type: ignore
-    self = cast(CheckpointFn, self)
+    self = cast(CachedFunction, self)
     return self.storage.exists(self.get_call_id(args, kw))
 
   def delete(self: Callable[P, R], *args: P.args, **kw: P.kwargs): # type: ignore
-    self = cast(CheckpointFn, self)
+    self = cast(CachedFunction, self)
     self.storage.delete(self.get_call_id(args, kw))
 
   def __repr__(self) -> str:
-    return f"<CheckpointFn {self.fn.__name__} {self.fn_hash[:6]}>"
+    return f"<CachedFunction {self.fn.__name__} {self.fn_hash[:6]}>"
 
-  def deep_depends(self, visited: set[CheckpointFn] = set()) -> Iterable[CheckpointFn]:
+  def deep_depends(self, visited: set[CachedFunction] = set()) -> Iterable[CachedFunction]:
     if self not in visited:
       yield self
       visited = visited or set()
       visited.add(self)
       for depend in self.depends:
-        if isinstance(depend, CheckpointFn):
+        if isinstance(depend, CachedFunction):
           yield from depend.deep_depends(visited)

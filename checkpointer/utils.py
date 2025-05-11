@@ -32,10 +32,10 @@ def get_cell_contents(fn: Callable) -> Iterable[tuple[str, Any]]:
     except ValueError:
       pass
 
-def unwrap_fn(fn: Fn, checkpoint_fn=False) -> Fn:
-  from .checkpoint import CheckpointFn
+def unwrap_fn(fn: Fn, cached_fn=False) -> Fn:
+  from .checkpoint import CachedFunction
   while True:
-    if (checkpoint_fn and isinstance(fn, CheckpointFn)) or not hasattr(fn, "__wrapped__"):
+    if (cached_fn and isinstance(fn, CachedFunction)) or not hasattr(fn, "__wrapped__"):
       return cast(Fn, fn)
     fn = getattr(fn, "__wrapped__")
 

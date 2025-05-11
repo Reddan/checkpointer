@@ -8,7 +8,7 @@ from typing import Any, Iterable, Type, TypeGuard
 from .object_hash import ObjectHash
 from .utils import AttrDict, distinct, get_cell_contents, iterate_and_upcoming, transpose, unwrap_fn
 
-cwd = Path.cwd()
+cwd = Path.cwd().resolve()
 
 def is_class(obj) -> TypeGuard[Type]:
   # isinstance works too, but needlessly triggers _lazyinit()
@@ -72,23 +72,23 @@ def is_user_fn(candidate_fn) -> TypeGuard[Callable]:
   return cwd in fn_path.parents and ".venv" not in fn_path.parts
 
 def get_depend_fns(fn: Callable, capture: bool, captured_vals_by_fn: dict[Callable, list[Any]] = {}) -> dict[Callable, list[Any]]:
-  from .checkpoint import CheckpointFn
+  from .checkpoint import CachedFunction
   captured_vals_by_fn = captured_vals_by_fn or {}
   captured_vals = get_fn_captured_vals(fn)
   captured_vals_by_fn[fn] = [val for val in captured_vals if not callable(val)] * capture
-  child_fns = (unwrap_fn(val, checkpoint_fn=True) for val in captured_vals if callable(val))
+  child_fns = (unwrap_fn(val, cached_fn=True) for val in captured_vals if callable(val))
   for child_fn in child_fns:
-    if isinstance(child_fn, CheckpointFn):
+    if isinstance(child_fn, CachedFunction):
       captured_vals_by_fn[child_fn] = []
     elif child_fn not in captured_vals_by_fn and is_user_fn(child_fn):
       get_depend_fns(child_fn, capture, captured_vals_by_fn)
   return captured_vals_by_fn
 
 def get_fn_ident(fn: Callable, capture: bool) -> tuple[str, list[Callable]]:
-  from .checkpoint import CheckpointFn
+  from .checkpoint import CachedFunction
   captured_vals_by_fn = get_depend_fns(fn, capture)
   depends, depend_captured_vals = transpose(captured_vals_by_fn.items(), 2)
   depends = distinct(fn.__func__ if isinstance(fn, MethodType) else fn for fn in depends)
-  unwrapped_depends = [fn for fn in depends if not isinstance(fn, CheckpointFn)]
+  unwrapped_depends = [fn for fn in depends if not isinstance(fn, CachedFunction)]
   fn_hash = str(ObjectHash(fn, unwrapped_depends).update(depend_captured_vals, tolerate_errors=True))
   return fn_hash, depends
