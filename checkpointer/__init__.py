@@ -4,8 +4,8 @@ from typing import Callable
 from .checkpoint import CachedFunction, Checkpointer, CheckpointError
 from .object_hash import ObjectHash
 from .storages import MemoryStorage, PickleStorage, Storage
+from .utils import AwaitableValue
 
-create_checkpointer = Checkpointer
 checkpoint = Checkpointer()
 capture_checkpoint = Checkpointer(capture=True)
 memory_checkpoint = Checkpointer(format="memory", verbosity=0)

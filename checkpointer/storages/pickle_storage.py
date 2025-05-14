@@ -1,7 +1,11 @@
 import pickle
 import shutil
 from datetime import datetime
+from pathlib import Path
 from .storage import Storage
+
+def filedate(path: Path) -> datetime:
+  return datetime.fromtimestamp(path.stat().st_mtime)
 
 class PickleStorage(Storage):
   def get_path(self, call_id: str):
@@ -12,13 +16,14 @@ class PickleStorage(Storage):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as file:
       pickle.dump(data, file, -1)
+    return data
 
   def exists(self, call_id):
     return self.get_path(call_id).exists()
 
   def checkpoint_date(self, call_id):
     # Should use st_atime/access time?
-    return datetime.fromtimestamp(self.get_path(call_id).stat().st_mtime)
+    return filedate(self.get_path(call_id))
 
   def load(self, call_id):
     with self.get_path(call_id).open("rb") as file:
@@ -38,7 +43,7 @@ class PickleStorage(Storage):
     if expired and self.checkpointer.should_expire:
       count = 0
       for pkl_path in fn_path.glob("**/*.pkl"):
-        if self.checkpointer.should_expire(self.checkpoint_date(pkl_path.stem)):
+        if self.checkpointer.should_expire(filedate(pkl_path)):
           count += 1
-          self.delete(pkl_path.stem)
+          pkl_path.unlink(missing_ok=True)
       print(f"Removed {count} expired checkpoints for {self.cached_fn.__qualname__}")

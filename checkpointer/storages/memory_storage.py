@@ -11,6 +11,7 @@ class MemoryStorage(Storage):
 
   def store(self, call_id, data):
     self.get_dict()[call_id] = (datetime.now(), data)
+    return data
 
   def exists(self, call_id):
     return call_id in self.get_dict()

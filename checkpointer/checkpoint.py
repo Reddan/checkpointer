@@ -4,7 +4,10 @@ import re
 from datetime import datetime
 from functools import cached_property, update_wrapper
 from pathlib import Path
-from typing import Awaitable, Callable, Generic, Iterable, Literal, ParamSpec, Type, TypedDict, TypeVar, Unpack, cast, overload
+from typing import (
+  Awaitable, Callable, Concatenate, Generic, Iterable, Literal,
+  ParamSpec, Self, Type, TypedDict, TypeVar, Unpack, cast, overload,
+)
 from .fn_ident import get_fn_ident
 from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
@@ -14,6 +17,7 @@ from .utils import AwaitableValue, unwrap_fn
 Fn = TypeVar("Fn", bound=Callable)
 P = ParamSpec("P")
 R = TypeVar("R")
+C = TypeVar("C")
 
 DEFAULT_DIR = Path.home() / ".cache/checkpoints"
 
@@ -64,6 +68,19 @@ class CachedFunction(Generic[Fn]):
     self.fn_dir = f"{fn_file}/{fn_name}"
     self.storage = Storage(self)
     self.cleanup = self.storage.cleanup
+    self.bound = ()
+
+  @overload
+  def __get__(self: Self, instance: None, owner: Type[C]) -> Self: ...
+  @overload
+  def __get__(self: CachedFunction[Callable[Concatenate[C, P], R]], instance: C, owner: Type[C]) -> CachedFunction[Callable[P, R]]: ...
+  def __get__(self, instance, owner):
+    if instance is None:
+      return self
+    bound_fn = object.__new__(CachedFunction)
+    bound_fn.__dict__ |= self.__dict__
+    bound_fn.bound = (instance,)
+    return bound_fn
 
   @cached_property
   def ident_tuple(self) -> tuple[str, list[Callable]]:
@@ -93,19 +110,19 @@ class CachedFunction(Generic[Fn]):
     return self
 
   def get_call_id(self, args: tuple, kw: dict) -> str:
+    args = self.bound + args
     hash_by = self.checkpointer.hash_by
     hash_params = hash_by(*args, **kw) if hash_by else (args, kw)
     return str(ObjectHash(hash_params, digest_size=16))
 
-  async def _resolve_awaitable(self, checkpoint_id: str, awaitable: Awaitable):
-    data = await awaitable
-    self.storage.store(checkpoint_id, AwaitableValue(data))
-    return data
+  async def _resolve_awaitable(self, call_id: str, awaitable: Awaitable):
+    return await self.storage.store(call_id, AwaitableValue(await awaitable))
 
-  def _call(self, args: tuple, kw: dict, rerun=False):
+  def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, rerun=False) -> R:
+    full_args = self.bound + args
     params = self.checkpointer
     if not params.when:
-      return self.fn(*args, **kw)
+      return self.fn(*full_args, **kw)
 
     call_id = self.get_call_id(args, kw)
     call_id_long = f"{self.fn_dir}/{self.fn_hash}/{call_id}"
@@ -116,12 +133,10 @@ class CachedFunction(Generic[Fn]):
 
     if refresh:
       print_checkpoint(params.verbosity >= 1, "MEMORIZING", call_id_long, "blue")
-      data = self.fn(*args, **kw)
+      data = self.fn(*full_args, **kw)
       if inspect.isawaitable(data):
         return self._resolve_awaitable(call_id, data)
-      else:
-        self.storage.store(call_id, data)
-        return data
+      return self.storage.store(call_id, data)
 
     try:
       data = self.storage.load(call_id)
@@ -132,14 +147,16 @@ class CachedFunction(Generic[Fn]):
     print_checkpoint(params.verbosity >= 1, "CORRUPTED", call_id_long, "yellow")
     return self._call(args, kw, True)
 
-  __call__: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw))
-  rerun: Fn = cast(Fn, lambda self, *args, **kw: self._call(args, kw, True))
+  def __call__(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> R:
+    return self._call(args, kw)
+
+  def rerun(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> R:
+    return self._call(args, kw, True)
 
   @overload
   def get(self: Callable[P, Awaitable[R]], *args: P.args, **kw: P.kwargs) -> R: ...
   @overload
   def get(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> R: ...
-
   def get(self, *args, **kw):
     call_id = self.get_call_id(args, kw)
     try:
@@ -148,12 +165,10 @@ class CachedFunction(Generic[Fn]):
     except Exception as ex:
       raise CheckpointError("Could not load checkpoint") from ex
 
-  def exists(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> bool: # type: ignore
-    self = cast(CachedFunction, self)
+  def exists(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> bool:
     return self.storage.exists(self.get_call_id(args, kw))
 
-  def delete(self: Callable[P, R], *args: P.args, **kw: P.kwargs): # type: ignore
-    self = cast(CachedFunction, self)
+  def delete(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs):
     self.storage.delete(self.get_call_id(args, kw))
 
   def __repr__(self) -> str:

@@ -1,7 +1,6 @@
 import asyncio
 import pytest
 from riprint import riprint as print
-from types import MethodType, MethodWrapperType
 from . import checkpoint
 from .checkpoint import CheckpointError
 from .utils import AttrDict

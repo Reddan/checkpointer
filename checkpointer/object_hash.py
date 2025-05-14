@@ -180,8 +180,10 @@ class ObjectHash:
   def _update_iterator(self, obj: Iterable) -> "ObjectHash":
     return self.header("iterator", encode_type_of(obj)).update(iter=obj).header("iterator-end")
 
-  def _update_object(self, obj: object) -> "ObjectHash":
+  def _update_object(self, obj: Any) -> "ObjectHash":
     self.header("instance", encode_type_of(obj))
+    if hasattr(obj, "__objecthash__") and callable(obj.__objecthash__):
+      return self.header("objecthash").update(obj.__objecthash__())
     reduced = None
     with suppress(Exception):
       reduced = obj.__reduce_ex__(PROTOCOL)
