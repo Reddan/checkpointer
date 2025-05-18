@@ -202,5 +202,7 @@ class ObjectHash:
       return self.header("slots").update(slots)
     if d := getattr(obj, "__dict__", {}):
       return self.header("dict").update(d)
+    if isinstance(obj, Iterable):
+      return self._update_iterator(obj)
     repr_str = re.sub(r"\s+(at\s+0x[0-9a-fA-F]+)(>)$", r"\2", repr(obj))
     return self.header("repr").update(repr_str)

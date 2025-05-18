@@ -1,12 +1,12 @@
 [project]
 name = "checkpointer"
-version = "2.10.0"
+version = "2.10.1"
 requires-python = ">=3.11"
 dependencies = []
 authors = [
   {name = "Hampus Hallman"}
 ]
-description = "A Python library for memoizing function results with support for multiple storage backends, async runtimes, and automatic cache invalidation"
+description = "checkpointer adds code-aware caching to Python functions, maintaining correctness and speeding up execution as your code changes."
 readme = "README.md"
 license = {file = "LICENSE"}
 classifiers = [
@@ -21,11 +21,10 @@ Repository = "https://github.com/Reddan/checkpointer.git"
 [dependency-groups]
 dev = [
   "numpy>=2.2.1",
-  "omg>=1.2.3",
+  "omg>=1.3.4",
   "poethepoet>=0.30.0",
   "pytest>=8.3.5",
   "pytest-asyncio>=0.26.0",
-  "relib>=1.0.8",
   "torch>=2.5.1",
 ]
 

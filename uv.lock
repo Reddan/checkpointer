@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "checkpointer"
-version = "2.10.0"
+version = "2.10.1"
 source = { editable = "." }
 
 [package.dev-dependencies]
@@ -18,8 +18,6 @@ dev = [
     { name = "poethepoet" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "relib", version = "1.0.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "relib", version = "1.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "torch" },
 ]
 
@@ -28,11 +26,10 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "numpy", specifier = ">=2.2.1" },
-    { name = "omg", specifier = ">=1.2.3" },
+    { name = "omg", specifier = ">=1.3.4" },
     { name = "poethepoet", specifier = ">=0.30.0" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", specifier = ">=0.26.0" },
-    { name = "relib", specifier = ">=1.0.8" },
     { name = "torch", specifier = ">=2.5.1" },
 ]
 
@@ -310,16 +307,14 @@ wheels = [
 
 [[package]]
 name = "omg"
-version = "1.2.3"
+version = "1.3.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "riprint" },
-    { name = "termcolor" },
     { name = "watchdog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/84/b6/91651c750cb555ac3abd71485982bebe41a373ce0e688a9559cd2823cffe/omg-1.2.3.tar.gz", hash = "sha256:7f2009359ed6a50c51d2b911857e90b3f144903e800008464814c7eabc5191b9", size = 11409 }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/12/9037613ad41ad71f6342e18a7fdf8f19826dfe61555c45541d87045cd084/omg-1.3.4.tar.gz", hash = "sha256:31e5fd82c2d2fdc53e944b1cb9fb7f630919f9441b8822fb5ae108962fabb49b", size = 14193 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bb/21/cf8b7a549506e5fbc1c2eed228ccab8774a1d5da5939c4593ac0968ec654/omg-1.2.3-py3-none-any.whl", hash = "sha256:110b242021fffc200eda3be86f09f8010a3eef1139346c6395cc24082f191a13", size = 4428 },
+    { url = "https://files.pythonhosted.org/packages/fd/88/4a4e1cc054f141744a60e17d76c8ea1aea7af7e125cae0713d9b0d5ec12f/omg-1.3.4-py3-none-any.whl", hash = "sha256:449e00d341b63afa23633f47cd751a1874ad2545162e5f9abbdd115525fd7a71", size = 7926 },
 ]
 
 [[package]]
@@ -425,45 +420,6 @@ wheels = [
 ]
 
 [[package]]
-name = "relib"
-version = "1.0.8"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version < '3.12'",
-]
-dependencies = [
-    { name = "numpy", marker = "python_full_version < '3.12'" },
-    { name = "termcolor", marker = "python_full_version < '3.12'" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/2e/0ad818236f0d451b378fed6c985798f27e94140e567c76876f7c0823af4b/relib-1.0.8-py3-none-any.whl", hash = "sha256:4c99fb9da7c1e40cbdc088a0d2f0000ce16caf16674dc1c5a8bff9e68664d315", size = 8907 },
-]
-
-[[package]]
-name = "relib"
-version = "1.2.1"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.12'",
-]
-sdist = { url = "https://files.pythonhosted.org/packages/21/0e/eeac07953e649a92c8c92d646d3c5706624e9254f5f5d35837cf4a7132d9/relib-1.2.1.tar.gz", hash = "sha256:1c12ad491e5adf7e1f961fa26a2c08a5c1c741508ae487d9d4aff125a5433526", size = 6163 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/d3/6baacf316516e809c6e14f83a1b3de69d3b06b067066d5ae361fb0399f33/relib-1.2.1-py3-none-any.whl", hash = "sha256:587883d7cdd479b8518619b25b871ea39395658407442a707e71501a5c67a737", size = 7879 },
-]
-
-[[package]]
-name = "riprint"
-version = "1.0.5"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-    { name = "termcolor" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/34/6206ab33d8244417f52d5e623d42180132d951b8301a70fed1b3a033cd83/riprint-1.0.5-py3-none-any.whl", hash = "sha256:9796e410e27b3f24397507f981edad0d1c1d99f61df1c60eb5d29033887dcbdf", size = 2861 },
-]
-
-[[package]]
 name = "setuptools"
 version = "75.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -482,15 +438,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ca/99/5a5b6f19ff9f083671ddf7b9632028436167cd3d33e11015754e41b249a4/sympy-1.13.1.tar.gz", hash = "sha256:9cebf7e04ff162015ce31c9c6c9144daa34a93bd082f54fd8f12deca4f47515f", size = 7533040 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b2/fe/81695a1aa331a842b582453b605175f419fe8540355886031328089d840a/sympy-1.13.1-py3-none-any.whl", hash = "sha256:db36cdc64bf61b9b24578b6f7bab1ecdd2452cf008f34faa33776680c26d66f8", size = 6189177 },
-]
-
-[[package]]
-name = "termcolor"
-version = "2.5.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/37/72/88311445fd44c455c7d553e61f95412cf89054308a1aa2434ab835075fc5/termcolor-2.5.0.tar.gz", hash = "sha256:998d8d27da6d48442e8e1f016119076b690d962507531df4890fcd2db2ef8a6f", size = 13057 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/be/df630c387a0a054815d60be6a97eb4e8f17385d5d6fe660e1c02750062b4/termcolor-2.5.0-py3-none-any.whl", hash = "sha256:37b17b5fc1e604945c2642c872a3764b5d547a48009871aea3edd3afa180afb8", size = 7755 },
 ]
 
 [[package]]

@@ -116,7 +116,7 @@ class CachedFunction(Generic[Fn]):
     return str(ObjectHash(hash_params, digest_size=16))
 
   async def _resolve_awaitable(self, call_id: str, awaitable: Awaitable):
-    return await self.storage.store(call_id, AwaitableValue(await awaitable))
+    return self.storage.store(call_id, AwaitableValue(await awaitable)).value
 
   def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, rerun=False) -> R:
     full_args = self.bound + args

@@ -1,8 +1,6 @@
 import asyncio
 import pytest
-from riprint import riprint as print
-from . import checkpoint
-from .checkpoint import CheckpointError
+from . import CheckpointError, checkpoint
 from .utils import AttrDict
 
 def global_multiply(a: int, b: int) -> int:
