@@ -1,12 +1,12 @@
 from __future__ import annotations
-import inspect
 import re
 from datetime import datetime
 from functools import cached_property, update_wrapper
+from inspect import iscoroutine
 from pathlib import Path
 from typing import (
-  Awaitable, Callable, Concatenate, Generic, Iterable, Literal,
-  ParamSpec, Self, Type, TypedDict, TypeVar, Unpack, cast, overload,
+  Callable, Concatenate, Coroutine, Generic, Iterable, Literal,
+  ParamSpec, Self, Type, TypedDict, TypeVar, Unpack, cast, overload
 )
 from .fn_ident import get_fn_ident
 from .object_hash import ObjectHash
@@ -103,8 +103,8 @@ class CachedFunction(Generic[Fn]):
   def reinit(self, recursive=False) -> CachedFunction[Fn]:
     depends = list(self.deep_depends()) if recursive else [self]
     for depend in depends:
-      self.__dict__.pop("fn_hash", None)
-      self.__dict__.pop("ident_tuple", None)
+      depend.__dict__.pop("fn_hash", None)
+      depend.__dict__.pop("ident_tuple", None)
     for depend in depends:
       depend.fn_hash
     return self
@@ -115,8 +115,8 @@ class CachedFunction(Generic[Fn]):
     hash_params = hash_by(*args, **kw) if hash_by else (args, kw)
     return str(ObjectHash(hash_params, digest_size=16))
 
-  async def _resolve_awaitable(self, call_id: str, awaitable: Awaitable):
-    return self.storage.store(call_id, AwaitableValue(await awaitable)).value
+  async def _resolve_coroutine(self, call_id: str, coroutine: Coroutine):
+    return self.storage.store(call_id, AwaitableValue(await coroutine)).value
 
   def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, rerun=False) -> R:
     full_args = self.bound + args
@@ -134,8 +134,8 @@ class CachedFunction(Generic[Fn]):
     if refresh:
       print_checkpoint(params.verbosity >= 1, "MEMORIZING", call_id_long, "blue")
       data = self.fn(*full_args, **kw)
-      if inspect.isawaitable(data):
-        return self._resolve_awaitable(call_id, data)
+      if iscoroutine(data):
+        return self._resolve_coroutine(call_id, data)
       return self.storage.store(call_id, data)
 
     try:
@@ -154,7 +154,7 @@ class CachedFunction(Generic[Fn]):
     return self._call(args, kw, True)
 
   @overload
-  def get(self: Callable[P, Awaitable[R]], *args: P.args, **kw: P.kwargs) -> R: ...
+  def get(self: Callable[P, Coroutine[object, object, R]], *args: P.args, **kw: P.kwargs) -> R: ...
   @overload
   def get(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> R: ...
   def get(self, *args, **kw):

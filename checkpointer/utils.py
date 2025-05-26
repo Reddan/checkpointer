@@ -1,7 +1,4 @@
-import inspect
-import tokenize
 from contextlib import contextmanager
-from io import StringIO
 from typing import Any, Callable, Generic, Iterable, TypeVar, cast
 
 T = TypeVar("T")
@@ -9,21 +6,6 @@ Fn = TypeVar("Fn", bound=Callable)
 
 def distinct(seq: Iterable[T]) -> list[T]:
   return list(dict.fromkeys(seq))
-
-def transpose(tuples, default_num_returns=0):
-  output = tuple(zip(*tuples))
-  if not output:
-    return ([],) * default_num_returns
-  return tuple(map(list, output))
-
-def get_fn_body(fn: Callable) -> str:
-  try:
-    source = inspect.getsource(fn)
-  except OSError:
-    return ""
-  tokens = tokenize.generate_tokens(StringIO(source).readline)
-  ignore_types = (tokenize.COMMENT, tokenize.NL)
-  return "".join("\0" + token.string for token in tokens if token.type not in ignore_types)
 
 def get_cell_contents(fn: Callable) -> Iterable[tuple[str, Any]]:
   for key, cell in zip(fn.__code__.co_freevars, fn.__closure__ or []):
@@ -91,14 +73,19 @@ class iterate_and_upcoming(Generic[T]):
   def __init__(self, it: Iterable[T]) -> None:
     self.it = iter(it)
     self.previous: tuple[()] | tuple[T] = ()
+    self.tracked = self._tracked_iter()
 
   def __iter__(self):
     return self
 
   def __next__(self) -> tuple[T, Iterable[T]]:
-    item = self.previous[0] if self.previous else next(self.it)
-    self.previous = ()
-    return item, self._tracked_iter()
+    try:
+      item = self.previous[0] if self.previous else next(self.it)
+      self.previous = ()
+      return item, self.tracked
+    except StopIteration:
+      self.tracked.close()
+      raise
 
   def _tracked_iter(self):
     for x in self.it:

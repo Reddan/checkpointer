@@ -1,12 +1,11 @@
 import dis
 import inspect
-from collections.abc import Callable
 from itertools import takewhile
 from pathlib import Path
 from types import CodeType, FunctionType, MethodType
-from typing import Any, Iterable, Type, TypeGuard
+from typing import Callable, Iterable, Type, TypeGuard
 from .object_hash import ObjectHash
-from .utils import AttrDict, distinct, get_cell_contents, iterate_and_upcoming, transpose, unwrap_fn
+from .utils import AttrDict, distinct, get_cell_contents, iterate_and_upcoming, unwrap_fn
 
 cwd = Path.cwd().resolve()
 
@@ -33,7 +32,7 @@ def extract_classvars(code: CodeType, scope_vars: AttrDict) -> dict[str, dict[st
       scope_obj = None
   return classvars
 
-def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Iterable[tuple[tuple[str, ...], Any]]:
+def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Iterable[tuple[tuple[str, ...], object]]:
   classvars = extract_classvars(code, scope_vars)
   scope_vars = scope_vars.set({k: scope_vars[k].set(v) for k, v in classvars.items()})
   for instr, upcoming_instrs in iterate_and_upcoming(dis.get_instructions(code)):
@@ -55,7 +54,7 @@ def get_self_value(fn: Callable) -> type | object | None:
   if is_class(cls):
     return cls
 
-def get_fn_captured_vals(fn: Callable) -> list[Any]:
+def get_fn_captured_vals(fn: Callable) -> list[object]:
   self_value = get_self_value(fn)
   scope_vars = AttrDict({
     "LOAD_FAST": AttrDict({"self": self_value} if self_value else {}),
@@ -71,23 +70,26 @@ def is_user_fn(candidate_fn) -> TypeGuard[Callable]:
   fn_path = Path(inspect.getfile(candidate_fn)).resolve()
   return cwd in fn_path.parents and ".venv" not in fn_path.parts
 
-def get_depend_fns(fn: Callable, capture: bool, captured_vals_by_fn: dict[Callable, list[Any]] = {}) -> dict[Callable, list[Any]]:
+def get_depend_fns(fn: Callable, captured_vals_by_fn: dict[Callable, list[object]] = {}) -> dict[Callable, list[object]]:
   from .checkpoint import CachedFunction
-  captured_vals_by_fn = captured_vals_by_fn or {}
   captured_vals = get_fn_captured_vals(fn)
-  captured_vals_by_fn[fn] = [val for val in captured_vals if not callable(val)] * capture
-  child_fns = (unwrap_fn(val, cached_fn=True) for val in captured_vals if callable(val))
-  for child_fn in child_fns:
+  captured_vals_by_fn = captured_vals_by_fn or {}
+  captured_vals_by_fn[fn] = [val for val in captured_vals if not callable(val)]
+  for val in captured_vals:
+    if not callable(val):
+      continue
+    child_fn = unwrap_fn(val, cached_fn=True)
     if isinstance(child_fn, CachedFunction):
       captured_vals_by_fn[child_fn] = []
     elif child_fn not in captured_vals_by_fn and is_user_fn(child_fn):
-      get_depend_fns(child_fn, capture, captured_vals_by_fn)
+      get_depend_fns(child_fn, captured_vals_by_fn)
   return captured_vals_by_fn
 
 def get_fn_ident(fn: Callable, capture: bool) -> tuple[str, list[Callable]]:
   from .checkpoint import CachedFunction
-  captured_vals_by_fn = get_depend_fns(fn, capture)
-  depends, depend_captured_vals = transpose(captured_vals_by_fn.items(), 2)
+  captured_vals_by_fn = get_depend_fns(fn)
+  depend_captured_vals = list(captured_vals_by_fn.values()) * capture
+  depends = captured_vals_by_fn.keys()
   depends = distinct(fn.__func__ if isinstance(fn, MethodType) else fn for fn in depends)
   unwrapped_depends = [fn for fn in depends if not isinstance(fn, CachedFunction)]
   fn_hash = str(ObjectHash(fn, unwrapped_depends).update(depend_captured_vals, tolerate_errors=True))

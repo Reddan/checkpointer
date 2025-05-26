@@ -1,16 +1,19 @@
 import ctypes
 import hashlib
+import inspect
 import io
 import re
 import sys
+import tokenize
 from collections.abc import Iterable
 from contextlib import nullcontext, suppress
 from decimal import Decimal
+from io import StringIO
 from itertools import chain
-from pickle import HIGHEST_PROTOCOL as PROTOCOL
+from pickle import HIGHEST_PROTOCOL as PICKLE_PROTOCOL
 from types import BuiltinFunctionType, FunctionType, GeneratorType, MethodType, ModuleType, UnionType
-from typing import Any, TypeVar
-from .utils import ContextVar, get_fn_body
+from typing import Callable, TypeVar
+from .utils import ContextVar
 
 np, torch = None, None
 
@@ -31,16 +34,16 @@ else:
 def encode_type(t: type | FunctionType) -> str:
   return f"{t.__module__}:{t.__qualname__}"
 
-def encode_type_of(v: Any) -> str:
+def encode_type_of(v: object) -> str:
   return encode_type(type(v))
 
 class ObjectHashError(Exception):
-  def __init__(self, obj: Any, cause: Exception):
+  def __init__(self, obj: object, cause: Exception):
     super().__init__(f"{type(cause).__name__} error when hashing {obj}")
     self.obj = obj
 
 class ObjectHash:
-  def __init__(self, *objs: Any, iter: Iterable[Any] = (), digest_size=64, tolerate_errors=False) -> None:
+  def __init__(self, *objs: object, iter: Iterable[object] = (), digest_size=64, tolerate_errors=False) -> None:
     self.hash = hashlib.blake2b(digest_size=digest_size)
     self.current: dict[int, int] = {}
     self.tolerate_errors = ContextVar(tolerate_errors)
@@ -59,7 +62,7 @@ class ObjectHash:
   def __eq__(self, value: object) -> bool:
     return isinstance(value, ObjectHash) and str(self) == str(value)
 
-  def nested_hash(self, *objs: Any) -> str:
+  def nested_hash(self, *objs: object) -> str:
     return ObjectHash(iter=objs, tolerate_errors=self.tolerate_errors.value).hexdigest()
 
   def write_bytes(self, *data: bytes, iter: Iterable[bytes] = ()) -> "ObjectHash":
@@ -70,10 +73,10 @@ class ObjectHash:
   def write_text(self, *data: str, iter: Iterable[str] = ()) -> "ObjectHash":
     return self.write_bytes(iter=(d.encode() for d in chain(data, iter)))
 
-  def header(self, *args: Any) -> "ObjectHash":
+  def header(self, *args: object) -> "ObjectHash":
     return self.write_bytes(":".join(map(str, args)).encode())
 
-  def update(self, *objs: Any, iter: Iterable[Any] = (), tolerate_errors: bool | None=None) -> "ObjectHash":
+  def update(self, *objs: object, iter: Iterable[object] = (), tolerate_errors: bool | None=None) -> "ObjectHash":
     with nullcontext() if tolerate_errors is None else self.tolerate_errors.set(tolerate_errors):
       for obj in chain(objs, iter):
         try:
@@ -81,11 +84,11 @@ class ObjectHash:
         except Exception as ex:
           if self.tolerate_errors.value:
             self.header("error").update(type(ex))
-            continue
-          raise ObjectHashError(obj, ex) from ex
+          else:
+            raise ObjectHashError(obj, ex) from ex
       return self
 
-  def _update_one(self, obj: Any) -> None:
+  def _update_one(self, obj: object) -> None:
     match obj:
       case None:
         self.header("null")
@@ -142,7 +145,7 @@ class ObjectHash:
       case _ if np and isinstance(obj, np.ndarray):
         self.header("ndarray", encode_type_of(obj), obj.shape, obj.strides).update(obj.dtype)
         if obj.dtype.hasobject:
-          self.update(obj.__reduce_ex__(PROTOCOL))
+          self.update(obj.__reduce_ex__(PICKLE_PROTOCOL))
         else:
           array = np.ascontiguousarray(obj if obj.base is None else obj.base).view(np.uint8)
           self.write_bytes(array.data)
@@ -180,13 +183,14 @@ class ObjectHash:
   def _update_iterator(self, obj: Iterable) -> "ObjectHash":
     return self.header("iterator", encode_type_of(obj)).update(iter=obj).header("iterator-end")
 
-  def _update_object(self, obj: Any) -> "ObjectHash":
+  def _update_object(self, obj: object) -> "ObjectHash":
     self.header("instance", encode_type_of(obj))
-    if hasattr(obj, "__objecthash__") and callable(obj.__objecthash__):
-      return self.header("objecthash").update(obj.__objecthash__())
+    get_hash = hasattr(obj, "__objecthash__") and getattr(obj, "__objecthash__")
+    if callable(get_hash):
+      return self.header("objecthash").update(get_hash())
     reduced = None
     with suppress(Exception):
-      reduced = obj.__reduce_ex__(PROTOCOL)
+      reduced = obj.__reduce_ex__(PICKLE_PROTOCOL)
     with suppress(Exception):
       reduced = reduced or obj.__reduce__()
     if isinstance(reduced, str):
@@ -206,3 +210,12 @@ class ObjectHash:
       return self._update_iterator(obj)
     repr_str = re.sub(r"\s+(at\s+0x[0-9a-fA-F]+)(>)$", r"\2", repr(obj))
     return self.header("repr").update(repr_str)
+
+def get_fn_body(fn: Callable) -> str:
+  try:
+    source = inspect.getsource(fn)
+  except OSError:
+    return ""
+  tokens = tokenize.generate_tokens(StringIO(source).readline)
+  ignore_types = (tokenize.COMMENT, tokenize.NL)
+  return "".join("\0" + token.string for token in tokens if token.type not in ignore_types)
