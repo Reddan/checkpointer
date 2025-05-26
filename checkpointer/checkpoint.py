@@ -9,7 +9,7 @@ from typing import (
   Iterable, Literal, ParamSpec, Self, Type, TypedDict,
   TypeVar, Unpack, cast, get_args, get_origin, overload,
 )
-from .fn_ident import get_fn_ident
+from .fn_ident import RawFunctionIdent, get_fn_ident
 from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
 from .storages import STORAGE_MAP, Storage
@@ -90,29 +90,31 @@ class CachedFunction(Generic[Fn]):
     return bound_fn
 
   @cached_property
-  def ident_tuple(self) -> tuple[str, list[Callable]]:
+  def ident(self) -> RawFunctionIdent:
     return get_fn_ident(unwrap_fn(self.fn), self.checkpointer.capture)
 
   @property
-  def fn_hash_raw(self) -> str:
-    return self.ident_tuple[0]
-
-  @property
   def depends(self) -> list[Callable]:
-    return self.ident_tuple[1]
+    return self.ident.depends
 
   @cached_property
   def fn_hash(self) -> str:
     if self.checkpointer.fn_hash_from is not None:
       return str(ObjectHash(self.checkpointer.fn_hash_from, digest_size=16))
-    deep_hashes = [depend.fn_hash_raw for depend in self.deep_depends()]
+    deep_hashes = [depend.ident.fn_hash for depend in self.deep_depends()]
     return str(ObjectHash(digest_size=16).write_text(iter=deep_hashes))
+
+  @cached_property
+  def captured_hash(self) -> str:
+    deep_hashes = [depend.ident.captured_hash for depend in self.deep_depends()]
+    return str(ObjectHash().write_text(iter=deep_hashes))
 
   def reinit(self, recursive=False) -> CachedFunction[Fn]:
     depends = list(self.deep_depends()) if recursive else [self]
     for depend in depends:
+      depend.__dict__.pop("captured_hash", None)
       depend.__dict__.pop("fn_hash", None)
-      depend.__dict__.pop("ident_tuple", None)
+      depend.__dict__.pop("ident", None)
     for depend in depends:
       depend.fn_hash
     return self
@@ -129,7 +131,7 @@ class CachedFunction(Generic[Fn]):
           named_args[key] = hash_by(value)
       if pos_hash_by := hash_by_map.get(b"*"):
         pos_args = tuple(map(pos_hash_by, pos_args))
-    return str(ObjectHash(named_args, pos_args, digest_size=16))
+    return str(ObjectHash(named_args, pos_args, self.captured_hash, digest_size=16))
 
   async def _resolve_coroutine(self, call_id: str, coroutine: Coroutine):
     return self.storage.store(call_id, AwaitableValue(await coroutine)).value

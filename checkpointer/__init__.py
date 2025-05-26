@@ -17,5 +17,5 @@ def cleanup_all(invalidated=True, expired=True):
     if isinstance(obj, CachedFunction):
       obj.cleanup(invalidated=invalidated, expired=expired)
 
-def get_function_hash(fn: Callable, capture=False) -> str:
-  return CachedFunction(Checkpointer(capture=capture), fn).fn_hash
+def get_function_hash(fn: Callable) -> str:
+  return CachedFunction(Checkpointer(), fn).fn_hash

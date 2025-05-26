@@ -3,11 +3,16 @@ import inspect
 from itertools import takewhile
 from pathlib import Path
 from types import CodeType, FunctionType, MethodType
-from typing import Callable, Iterable, Type, TypeGuard
+from typing import Callable, Iterable, NamedTuple, Type, TypeGuard
 from .object_hash import ObjectHash
 from .utils import AttrDict, distinct, get_cell_contents, iterate_and_upcoming, unwrap_fn
 
 cwd = Path.cwd().resolve()
+
+class RawFunctionIdent(NamedTuple):
+  fn_hash: str
+  captured_hash: str
+  depends: list[Callable]
 
 def is_class(obj) -> TypeGuard[Type]:
   # isinstance works too, but needlessly triggers _lazyinit()
@@ -85,12 +90,14 @@ def get_depend_fns(fn: Callable, captured_vals_by_fn: dict[Callable, list[object
       get_depend_fns(child_fn, captured_vals_by_fn)
   return captured_vals_by_fn
 
-def get_fn_ident(fn: Callable, capture: bool) -> tuple[str, list[Callable]]:
+def get_fn_ident(fn: Callable, capture: bool) -> RawFunctionIdent:
   from .checkpoint import CachedFunction
   captured_vals_by_fn = get_depend_fns(fn)
   depend_captured_vals = list(captured_vals_by_fn.values()) * capture
   depends = captured_vals_by_fn.keys()
   depends = distinct(fn.__func__ if isinstance(fn, MethodType) else fn for fn in depends)
   unwrapped_depends = [fn for fn in depends if not isinstance(fn, CachedFunction)]
-  fn_hash = str(ObjectHash(fn, unwrapped_depends).update(depend_captured_vals, tolerate_errors=True))
-  return fn_hash, depends
+  assert fn == unwrapped_depends[0]
+  fn_hash = str(ObjectHash(iter=unwrapped_depends))
+  captured_hash = str(ObjectHash(iter=depend_captured_vals, tolerate_errors=True))
+  return RawFunctionIdent(fn_hash, captured_hash, depends)
