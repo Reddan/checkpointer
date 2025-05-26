@@ -21,14 +21,6 @@ def unwrap_fn(fn: Fn, cached_fn=False) -> Fn:
       return cast(Fn, fn)
     fn = getattr(fn, "__wrapped__")
 
-class AwaitableValue:
-  def __init__(self, value):
-    self.value = value
-
-  def __await__(self):
-    yield
-    return self.value
-
 class AttrDict(dict):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)

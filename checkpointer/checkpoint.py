@@ -2,17 +2,19 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from functools import cached_property, update_wrapper
-from inspect import iscoroutine
+from inspect import Parameter, Signature, iscoroutine, signature
 from pathlib import Path
 from typing import (
-  Callable, Concatenate, Coroutine, Generic, Iterable, Literal,
-  ParamSpec, Self, Type, TypedDict, TypeVar, Unpack, cast, overload
+  Annotated, Callable, Concatenate, Coroutine, Generic,
+  Iterable, Literal, ParamSpec, Self, Type, TypedDict,
+  TypeVar, Unpack, cast, get_args, get_origin, overload,
 )
 from .fn_ident import get_fn_ident
 from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
 from .storages import STORAGE_MAP, Storage
-from .utils import AwaitableValue, unwrap_fn
+from .types import AwaitableValue, HashBy
+from .utils import unwrap_fn
 
 Fn = TypeVar("Fn", bound=Callable)
 P = ParamSpec("P")
@@ -29,10 +31,9 @@ class CheckpointerOpts(TypedDict, total=False):
   root_path: Path | str | None
   when: bool
   verbosity: Literal[0, 1, 2]
-  hash_by: Callable | None
   should_expire: Callable[[datetime], bool] | None
   capture: bool
-  fn_hash: ObjectHash | None
+  fn_hash_from: object
 
 class Checkpointer:
   def __init__(self, **opts: Unpack[CheckpointerOpts]):
@@ -40,10 +41,9 @@ class Checkpointer:
     self.root_path = Path(opts.get("root_path", DEFAULT_DIR) or ".")
     self.when = opts.get("when", True)
     self.verbosity = opts.get("verbosity", 1)
-    self.hash_by = opts.get("hash_by")
     self.should_expire = opts.get("should_expire")
     self.capture = opts.get("capture", False)
-    self.fn_hash = opts.get("fn_hash")
+    self.fn_hash_from = opts.get("fn_hash_from")
 
   @overload
   def __call__(self, fn: Fn, **override_opts: Unpack[CheckpointerOpts]) -> CachedFunction[Fn]: ...
@@ -69,6 +69,13 @@ class CachedFunction(Generic[Fn]):
     self.storage = Storage(self)
     self.cleanup = self.storage.cleanup
     self.bound = ()
+
+    sig = signature(wrapped)
+    params = list(sig.parameters.items())
+    pos_params = (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+    self.arg_names = [name for name, param in params if param.kind in pos_params]
+    self.default_args = {name: param.default for name, param in params if param.default is not Parameter.empty}
+    self.hash_by_map = get_hash_by_map(sig)
 
   @overload
   def __get__(self: Self, instance: None, owner: Type[C]) -> Self: ...
@@ -96,9 +103,10 @@ class CachedFunction(Generic[Fn]):
 
   @cached_property
   def fn_hash(self) -> str:
+    if self.checkpointer.fn_hash_from is not None:
+      return str(ObjectHash(self.checkpointer.fn_hash_from, digest_size=16))
     deep_hashes = [depend.fn_hash_raw for depend in self.deep_depends()]
-    fn_hash = ObjectHash(digest_size=16).write_text(self.fn_hash_raw, *deep_hashes)
-    return str(self.checkpointer.fn_hash or fn_hash)[:32]
+    return str(ObjectHash(digest_size=16).write_text(iter=deep_hashes))
 
   def reinit(self, recursive=False) -> CachedFunction[Fn]:
     depends = list(self.deep_depends()) if recursive else [self]
@@ -109,11 +117,19 @@ class CachedFunction(Generic[Fn]):
       depend.fn_hash
     return self
 
-  def get_call_id(self, args: tuple, kw: dict) -> str:
+  def get_call_id(self, args: tuple, kw: dict[str, object]) -> str:
     args = self.bound + args
-    hash_by = self.checkpointer.hash_by
-    hash_params = hash_by(*args, **kw) if hash_by else (args, kw)
-    return str(ObjectHash(hash_params, digest_size=16))
+    pos_args = args[len(self.arg_names):]
+    named_pos_args = dict(zip(self.arg_names, args))
+    named_args = {**self.default_args, **named_pos_args, **kw}
+    if hash_by_map := self.hash_by_map:
+      rest_hash_by = hash_by_map.get(b"**")
+      for key, value in named_args.items():
+        if hash_by := hash_by_map.get(key, rest_hash_by):
+          named_args[key] = hash_by(value)
+      if pos_hash_by := hash_by_map.get(b"*"):
+        pos_args = tuple(map(pos_hash_by, pos_args))
+    return str(ObjectHash(named_args, pos_args, digest_size=16))
 
   async def _resolve_coroutine(self, call_id: str, coroutine: Coroutine):
     return self.storage.store(call_id, AwaitableValue(await coroutine)).value
@@ -182,3 +198,20 @@ class CachedFunction(Generic[Fn]):
       for depend in self.depends:
         if isinstance(depend, CachedFunction):
           yield from depend.deep_depends(visited)
+
+def hash_by_from_annotation(annotation: type) -> Callable[[object], object] | None:
+  if get_origin(annotation) is Annotated:
+    args = get_args(annotation)
+    metadata = args[1] if len(args) > 1 else None
+    if get_origin(metadata) is HashBy:
+      return get_args(metadata)[0]
+
+def get_hash_by_map(sig: Signature) -> dict[str | bytes, Callable[[object], object]]:
+  hash_by_map = {}
+  for name, param in sig.parameters.items():
+    if param.kind == Parameter.VAR_POSITIONAL:
+      name = b"*"
+    elif param.kind == Parameter.VAR_KEYWORD:
+      name = b"**"
+    hash_by_map[name] = hash_by_from_annotation(param.annotation)
+  return hash_by_map if any(hash_by_map.values()) else {}

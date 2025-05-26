@@ -101,11 +101,8 @@ The `@checkpoint` decorator accepts the following parameters to customize its be
 * **`should_expire`** (Type: `Callable[[datetime.datetime], bool]`, Default: `None`)\
     A custom callable that receives the `datetime` timestamp of a cached result. It should return `True` if the cached result is considered expired and needs recomputation, or `False` otherwise.
 
-* **`hash_by`** (Type: `Callable[..., Any]`, Default: `None`)\
-    A custom callable that takes the function's arguments (`*args`, `**kwargs`) and returns a hashable object (or tuple of objects). This allows for custom argument normalization (e.g., sorting lists before hashing) or optimized hashing for complex input types, which can improve cache hit rates or speed up the hashing process.
-
-* **`fn_hash`** (Type: `checkpointer.ObjectHash`, Default: `None`)\
-    An optional parameter that takes an instance of `checkpointer.ObjectHash`. This allows you to override the automatically computed function hash, giving you explicit control over when the function's cache should be invalidated. You can pass any values relevant to your invalidation logic to `ObjectHash` (e.g., `ObjectHash(version_string, config_id, ...)`, as it can consistently hash most Python values.
+* **`fn_hash_from`** (Type: `Any`, Default: `None`)\
+    This allows you to override the automatically computed function hash, giving you explicit control over when the function's cache should be invalidated. You can pass any object relevant to your invalidation logic (e.g., version strings, config parameters). The object you provide will be hashed internally by `checkpointer`.
 
 * **`verbosity`** (Type: `int` (`0`, `1`, or `2`), Default: `1`)\
     Controls the level of logging output from `checkpointer`.
@@ -113,13 +110,45 @@ The `@checkpoint` decorator accepts the following parameters to customize its be
     * `1`: Shows when functions are computed and cached.
     * `2`: Also shows when cached results are remembered (loaded from cache).
 
-### 🗄️ Custom Storage Backends
+## 🔬 Customize Argument Hashing
+
+You can customize how individual function arguments are hashed without changing their actual values when passed in.
+
+* **`Annotated[T, HashBy[fn]]`**:\
+    Hashes the argument by applying `fn(argument)` before hashing. This enables custom normalization (e.g., sorting lists to ignore order) or optimized hashing for complex types, improving cache hit rates or speeding up hashing.
+
+* **`NoHash[T]`**:\
+    Completely excludes the argument from hashing, so changes to it won’t trigger cache invalidation.
+
+**Example:**
+
+```python
+from typing import Annotated
+from checkpointer import checkpoint, HashBy, NoHash
+from pathlib import Path
+import logging
+
+def file_bytes(path: Path) -> bytes:
+    return path.read_bytes()
+
+@checkpoint
+def process(
+    numbers: Annotated[list[int], HashBy[sorted]],   # Hash by sorted list
+    data_file: Annotated[Path, HashBy[file_bytes]],  # Hash by file content
+    log: NoHash[logging.Logger],                     # Exclude logger from hashing
+):
+    ...
+```
+
+In this example, the cache key for `numbers` ignores order, `data_file` is hashed based on its contents rather than path, and changes to `log` don’t affect caching.
+
+## 🗄️ Custom Storage Backends
 
 For integration with databases, cloud storage, or custom serialization, implement your own storage backend by inheriting from `checkpointer.Storage` and implementing its abstract methods.
 
 Within custom storage methods, `call_id` identifies calls by arguments. Use `self.fn_id()` to get the function's unique identity (name + hash/version), crucial for organizing stored checkpoints (e.g., by function version). Access global `Checkpointer` config via `self.checkpointer`.
 
-#### Example: Custom Storage Backend
+**Example: Custom Storage Backend**
 
 ```python
 from checkpointer import checkpoint, Storage
