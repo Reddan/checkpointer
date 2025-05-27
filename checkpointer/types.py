@@ -8,8 +8,8 @@ class HashBy(Generic[Fn]):
 
 NoHash = Annotated[T, HashBy[lambda _: None]]
 
-class AwaitableValue:
-  def __init__(self, value):
+class AwaitableValue(Generic[T]):
+  def __init__(self, value: T):
     self.value = value
 
   def __await__(self):

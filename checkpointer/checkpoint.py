@@ -199,6 +199,13 @@ class CachedFunction(Generic[Fn]):
     except Exception as ex:
       raise CheckpointError("Could not load checkpoint") from ex
 
+  @overload
+  def _set(self: Callable[P, Coroutine[object, object, R]], value: AwaitableValue[R], *args: P.args, **kw: P.kwargs): ...
+  @overload
+  def _set(self: Callable[P, R], value: R, *args: P.args, **kw: P.kwargs): ...
+  def _set(self, value, *args, **kw):
+    self.storage.store(self.get_call_hash(args, kw), value)
+
   def __repr__(self) -> str:
     return f"<CachedFunction {self.fn.__name__} {self.ident.fn_hash[:6]}>"
 
