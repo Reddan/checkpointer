@@ -146,7 +146,7 @@ In this example, the cache key for `numbers` ignores order, `data_file` is hashe
 
 For integration with databases, cloud storage, or custom serialization, implement your own storage backend by inheriting from `checkpointer.Storage` and implementing its abstract methods.
 
-Within custom storage methods, `call_id` identifies calls by arguments. Use `self.fn_id()` to get the function's unique identity (name + hash/version), crucial for organizing stored checkpoints (e.g., by function version). Access global `Checkpointer` config via `self.checkpointer`.
+Within custom storage methods, `call_hash` identifies calls by arguments. Use `self.fn_id()` to get the function's unique identity (name + hash/version), crucial for organizing stored checkpoints (e.g., by function version). Access global `Checkpointer` config via `self.checkpointer`.
 
 **Example: Custom Storage Backend**
 
@@ -155,18 +155,18 @@ from checkpointer import checkpoint, Storage
 from datetime import datetime
 
 class MyCustomStorage(Storage):
-    def exists(self, call_id):
+    def exists(self, call_hash):
         # Example: Constructing a path based on function ID and call ID
         fn_dir = self.checkpointer.root_path / self.fn_id()
-        return (fn_dir / call_id).exists()
+        return (fn_dir / call_hash).exists()
 
-    def store(self, call_id, data):
-        ... # Store the serialized data for `call_id`
+    def store(self, call_hash, data):
+        ... # Store the serialized data for `call_hash`
         return data # This method must return the data back to checkpointer
 
-    def checkpoint_date(self, call_id): ...
-    def load(self, call_id): ...
-    def delete(self, call_id): ...
+    def checkpoint_date(self, call_hash): ...
+    def load(self, call_hash): ...
+    def delete(self, call_hash): ...
 
 @checkpoint(format=MyCustomStorage)
 def custom_cached_function(x: int):

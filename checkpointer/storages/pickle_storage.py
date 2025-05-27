@@ -8,29 +8,29 @@ def filedate(path: Path) -> datetime:
   return datetime.fromtimestamp(path.stat().st_mtime)
 
 class PickleStorage(Storage):
-  def get_path(self, call_id: str):
-    return self.fn_dir() / f"{call_id}.pkl"
+  def get_path(self, call_hash: str):
+    return self.fn_dir() / f"{call_hash}.pkl"
 
-  def store(self, call_id, data):
-    path = self.get_path(call_id)
+  def store(self, call_hash, data):
+    path = self.get_path(call_hash)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as file:
       pickle.dump(data, file, -1)
     return data
 
-  def exists(self, call_id):
-    return self.get_path(call_id).exists()
+  def exists(self, call_hash):
+    return self.get_path(call_hash).exists()
 
-  def checkpoint_date(self, call_id):
+  def checkpoint_date(self, call_hash):
     # Should use st_atime/access time?
-    return filedate(self.get_path(call_id))
+    return filedate(self.get_path(call_hash))
 
-  def load(self, call_id):
-    with self.get_path(call_id).open("rb") as file:
+  def load(self, call_hash):
+    with self.get_path(call_hash).open("rb") as file:
       return pickle.load(file)
 
-  def delete(self, call_id):
-    self.get_path(call_id).unlink(missing_ok=True)
+  def delete(self, call_hash):
+    self.get_path(call_hash).unlink(missing_ok=True)
 
   def cleanup(self, invalidated=True, expired=True):
     version_path = self.fn_dir()

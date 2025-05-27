@@ -129,7 +129,7 @@ class CachedFunction(Generic[Fn]):
     for ident in depend_idents: ident.fn_hash
     return self
 
-  def get_call_id(self, args: tuple, kw: dict[str, object]) -> str:
+  def get_call_hash(self, args: tuple, kw: dict[str, object]) -> str:
     args = self.bound + args
     pos_args = args[len(self.arg_names):]
     named_pos_args = dict(zip(self.arg_names, args))
@@ -143,8 +143,8 @@ class CachedFunction(Generic[Fn]):
         pos_args = tuple(map(pos_hash_by, pos_args))
     return str(ObjectHash(named_args, pos_args, self.ident.captured_hash, digest_size=16))
 
-  async def _resolve_coroutine(self, call_id: str, coroutine: Coroutine):
-    return self.storage.store(call_id, AwaitableValue(await coroutine)).value
+  async def _resolve_coroutine(self, call_hash: str, coroutine: Coroutine):
+    return self.storage.store(call_hash, AwaitableValue(await coroutine)).value
 
   def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, rerun=False) -> R:
     full_args = self.bound + args
@@ -152,27 +152,27 @@ class CachedFunction(Generic[Fn]):
     if not params.when:
       return self.fn(*full_args, **kw)
 
-    call_id = self.get_call_id(args, kw)
-    call_id_long = f"{self.fn_dir}/{self.ident.fn_hash}/{call_id}"
+    call_hash = self.get_call_hash(args, kw)
+    call_hash_long = f"{self.fn_dir}/{self.ident.fn_hash}/{call_hash}"
 
     refresh = rerun \
-      or not self.storage.exists(call_id) \
-      or (params.should_expire and params.should_expire(self.storage.checkpoint_date(call_id)))
+      or not self.storage.exists(call_hash) \
+      or (params.should_expire and params.should_expire(self.storage.checkpoint_date(call_hash)))
 
     if refresh:
-      print_checkpoint(params.verbosity >= 1, "MEMORIZING", call_id_long, "blue")
+      print_checkpoint(params.verbosity >= 1, "MEMORIZING", call_hash_long, "blue")
       data = self.fn(*full_args, **kw)
       if iscoroutine(data):
-        return self._resolve_coroutine(call_id, data)
-      return self.storage.store(call_id, data)
+        return self._resolve_coroutine(call_hash, data)
+      return self.storage.store(call_hash, data)
 
     try:
-      data = self.storage.load(call_id)
-      print_checkpoint(params.verbosity >= 2, "REMEMBERED", call_id_long, "green")
+      data = self.storage.load(call_hash)
+      print_checkpoint(params.verbosity >= 2, "REMEMBERED", call_hash_long, "green")
       return data
     except (EOFError, FileNotFoundError):
       pass
-    print_checkpoint(params.verbosity >= 1, "CORRUPTED", call_id_long, "yellow")
+    print_checkpoint(params.verbosity >= 1, "CORRUPTED", call_hash_long, "yellow")
     return self._call(args, kw, True)
 
   def __call__(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> R:
@@ -181,23 +181,23 @@ class CachedFunction(Generic[Fn]):
   def rerun(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> R:
     return self._call(args, kw, True)
 
+  def exists(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> bool:
+    return self.storage.exists(self.get_call_hash(args, kw))
+
+  def delete(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs):
+    self.storage.delete(self.get_call_hash(args, kw))
+
   @overload
   def get(self: Callable[P, Coroutine[object, object, R]], *args: P.args, **kw: P.kwargs) -> R: ...
   @overload
   def get(self: Callable[P, R], *args: P.args, **kw: P.kwargs) -> R: ...
   def get(self, *args, **kw):
-    call_id = self.get_call_id(args, kw)
+    call_hash = self.get_call_hash(args, kw)
     try:
-      data = self.storage.load(call_id)
+      data = self.storage.load(call_hash)
       return data.value if isinstance(data, AwaitableValue) else data
     except Exception as ex:
       raise CheckpointError("Could not load checkpoint") from ex
-
-  def exists(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> bool:
-    return self.storage.exists(self.get_call_id(args, kw))
-
-  def delete(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs):
-    self.storage.delete(self.get_call_id(args, kw))
 
   def __repr__(self) -> str:
     return f"<CachedFunction {self.fn.__name__} {self.ident.fn_hash[:6]}>"
