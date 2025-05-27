@@ -18,4 +18,4 @@ def cleanup_all(invalidated=True, expired=True):
       obj.cleanup(invalidated=invalidated, expired=expired)
 
 def get_function_hash(fn: Callable) -> str:
-  return CachedFunction(Checkpointer(), fn).fn_hash
+  return CachedFunction(Checkpointer(), fn).ident.fn_hash

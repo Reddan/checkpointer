@@ -110,16 +110,16 @@ def test_capture():
   def test_a():
     return item_dict.a + 1
 
-  init_hash_a = test_a.captured_hash
-  init_hash_whole = test_whole.captured_hash
+  init_hash_a = test_a.ident.captured_hash
+  init_hash_whole = test_whole.ident.captured_hash
   item_dict.b += 1
   test_whole.reinit()
   test_a.reinit()
-  assert test_whole.captured_hash != init_hash_whole
-  assert test_a.captured_hash == init_hash_a
+  assert test_whole.ident.captured_hash != init_hash_whole
+  assert test_a.ident.captured_hash == init_hash_a
   item_dict.a += 1
   test_a.reinit()
-  assert test_a.captured_hash != init_hash_a
+  assert test_a.ident.captured_hash != init_hash_a
 
 def test_depends():
   def multiply_wrapper(a: int, b: int) -> int:

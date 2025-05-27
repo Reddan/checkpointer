@@ -15,7 +15,7 @@ class Storage:
     self.cached_fn = cached_fn
 
   def fn_id(self) -> str:
-    return f"{self.cached_fn.fn_dir}/{self.cached_fn.fn_hash}"
+    return f"{self.cached_fn.fn_dir}/{self.cached_fn.ident.fn_hash}"
 
   def fn_dir(self) -> Path:
     return self.checkpointer.root_path / self.fn_id()
