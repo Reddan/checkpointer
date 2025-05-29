@@ -1,8 +1,6 @@
 # checkpointer · [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Reddan/checkpointer/blob/master/LICENSE) [![pypi](https://img.shields.io/pypi/v/checkpointer)](https://pypi.org/project/checkpointer/) [![pypi](https://img.shields.io/pypi/pyversions/checkpointer)](https://pypi.org/project/checkpointer/)
 
-`checkpointer` is a Python library providing a decorator-based API for memoizing (caching) function results. It helps you skip redundant, computationally expensive operations, saving execution time and streamlining your workflows.
-
-It works with synchronous and asynchronous functions, supports multiple storage backends, and automatically invalidates caches when function code, dependencies, or captured variables change.
+`checkpointer` is a Python library offering a decorator-based API for memoizing (caching) function results with code-aware cache invalidation. It works with sync and async functions, supports multiple storage backends, and refreshes caches automatically when your code or dependencies change - helping you maintain correctness, speed up execution, and smooth out your workflows by skipping redundant, costly operations.
 
 ## 📦 Installation
 

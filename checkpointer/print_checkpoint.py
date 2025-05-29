@@ -29,7 +29,7 @@ COLOR_MAP: dict[Color, int] = {
   "white": 97,
 }
 
-def allow_color() -> bool:
+def _allow_color() -> bool:
   if "NO_COLOR" in os.environ or os.environ.get("TERM") == "dumb" or not hasattr(sys.stdout, "fileno"):
     return False
   try:
@@ -37,15 +37,16 @@ def allow_color() -> bool:
   except io.UnsupportedOperation:
     return sys.stdout.isatty()
 
-def colored_(text: str, color: Color | None = None, on_color: Color | None = None) -> str:
+allow_color = _allow_color()
+
+def colored(text: str, color: Color | None = None, on_color: Color | None = None) -> str:
+  if not allow_color:
+    return text
   if color:
     text = f"\033[{COLOR_MAP[color]}m{text}"
   if on_color:
     text = f"\033[{COLOR_MAP[on_color] + 10}m{text}"
   return text + "\033[0m"
-
-noop = lambda text, *a, **k: text
-colored = colored_ if allow_color() else noop
 
 def print_checkpoint(should_log: bool, title: str, text: str, color: Color):
   if should_log:

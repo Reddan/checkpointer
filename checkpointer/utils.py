@@ -1,13 +1,11 @@
 from contextlib import contextmanager
-from typing import Any, Callable, Generic, Iterable, TypeVar, cast
-
-T = TypeVar("T")
-Fn = TypeVar("Fn", bound=Callable)
+from typing import Callable, Generic, Iterable, cast
+from .types import Fn, T
 
 def distinct(seq: Iterable[T]) -> list[T]:
   return list(dict.fromkeys(seq))
 
-def get_cell_contents(fn: Callable) -> Iterable[tuple[str, Any]]:
+def get_cell_contents(fn: Callable) -> Iterable[tuple[str, object]]:
   for key, cell in zip(fn.__code__.co_freevars, fn.__closure__ or []):
     try:
       yield (key, cell.cell_contents)
@@ -26,11 +24,11 @@ class AttrDict(dict):
     super().__init__(*args, **kwargs)
     self.__dict__ = self
 
-  def __getattribute__(self, name: str) -> Any:
+  def __getattribute__(self, name: str):
     return super().__getattribute__(name)
 
-  def __setattr__(self, name: str, value: Any) -> None:
-    return super().__setattr__(name, value)
+  def __setattr__(self, name: str, value: object):
+    super().__setattr__(name, value)
 
   def set(self, d: dict) -> "AttrDict":
     if not d:
@@ -43,7 +41,7 @@ class AttrDict(dict):
       del d[attr]
     return d
 
-  def get_at(self, attrs: tuple[str, ...]) -> Any:
+  def get_at(self, attrs: tuple[str, ...]) -> object:
     d = self
     for attr in attrs:
       d = getattr(d, attr, None)
