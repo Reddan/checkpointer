@@ -39,12 +39,16 @@ def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Iterable[tuple
   instructs = seekable(dis.get_instructions(code))
   for instr in instructs:
     if instr.opname in scope_vars:
-      attrs = takewhile((x.opname == "LOAD_ATTR", x.argval) for x in instructs)
+      attrs = takewhile((x.opname in ("LOAD_ATTR", "LOAD_METHOD"), x.argval) for x in instructs)
       attr_path = AttrPath((instr.opname, instr.argval, *attrs))
+      parent_path = attr_path[:-1]
       instructs.step(-1)
       obj = scope_vars.get_at(*attr_path)
       if obj is not None:
         yield attr_path, obj
+      if callable(obj) and parent_path[1:]:
+        parent_obj = scope_vars.get_at(*parent_path)
+        yield parent_path, parent_obj
   for const in code.co_consts:
     if isinstance(const, CodeType):
       yield from extract_scope_values(const, scope_vars)
