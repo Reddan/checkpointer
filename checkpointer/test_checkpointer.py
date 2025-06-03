@@ -1,16 +1,83 @@
 import asyncio
+import sys
 import pytest
-from checkpointer import CheckpointError, checkpoint
+from pathlib import Path
+from typing import Annotated, get_origin
+from checkpointer import CachedFunction, Callable, CaptureMe, CaptureMeOnce, CheckpointError, HashBy, checkpoint
+from .import_mappings import resolve_annotation
+from .print_checkpoint import COLOR_MAP
 from .utils import AttrDict
+
+captured_dict: CaptureMe[AttrDict] = AttrDict({"a": 1, "b": 1})
+captured_dict_once: CaptureMeOnce[AttrDict] = AttrDict({"a": 1, "b": 1})
+nums: CaptureMe[Annotated[list[int], HashBy[sorted]]] = [3, 2, 1]
+
+def square(x: int):
+  return x * x
+
+class TestClass:
+  def __init__(self, x: int):
+    self.x = x
+
+  @checkpoint
+  def add_and_square(self, y: int) -> int:
+    return square(self.x + y)
+
+test_obj: CaptureMe[TestClass] = TestClass(20)
 
 def global_multiply(a: int, b: int) -> int:
   return a * b
 
+def get_depend_callables(fn: CachedFunction) -> set[Callable]:
+  return {
+    depend
+    for depend in fn.ident.deep_depends()
+    if not isinstance(depend, CachedFunction) and depend != fn.fn
+  }
+
 @pytest.fixture(autouse=True)
 def run_before_and_after_tests(tmpdir):
-  global checkpoint
-  checkpoint = checkpoint(root_path=tmpdir)
+  checkpoint.root_path = Path(tmpdir)
   yield
+
+def test_inner_capture_resolve_propagates():
+  @checkpoint
+  def fst():
+    return captured_dict_once
+
+  fst_capts = fst.ident.capturables
+  captured_dict_once.a += 1
+
+  @checkpoint
+  def snd():
+    _ = captured_dict_once
+    return fst()
+
+  snd_capts = snd.ident.capturables
+  assert fst_capts == snd_capts
+
+def test_method_capturing():
+  @checkpoint
+  def some_fn():
+    obj = TestClass(10)
+    return obj.add_and_square(5)
+
+  @checkpoint
+  def some_capturing_fn():
+    return test_obj.add_and_square(5)
+
+  depends1 = get_depend_callables(some_fn)
+  depends2 = get_depend_callables(some_capturing_fn)
+  assert depends1 == depends2 == {TestClass.add_and_square.fn, square}
+  assert some_capturing_fn.ident.capturables[0].capture()[1] == test_obj
+
+def test_decorated_method():
+  result = TestClass(20).add_and_square(5)
+  assert TestClass(20).add_and_square.get(5) == result
+
+def test_resolve_annotation():
+  anno = resolve_annotation(sys.modules[__name__], "COLOR_MAP")
+  assert get_origin(anno) is type(COLOR_MAP)
 
 def test_basic_caching():
   @checkpoint
@@ -100,26 +167,37 @@ def test_multi_layer_decorator():
   assert add.get(2, 3) == 5
 
 def test_capture():
-  item_dict = AttrDict({"a": 1, "b": 1})
+  @checkpoint
+  def test_once():
+    return captured_dict_once
 
-  @checkpoint(capture=True)
+  @checkpoint
   def test_whole():
-    return item_dict
+    return captured_dict
 
   @checkpoint(capture=True)
   def test_a():
-    return item_dict.a + 1
+    return captured_dict.a + 1
 
-  init_hash_a = test_a.ident.captured_hash
-  init_hash_whole = test_whole.ident.captured_hash
-  item_dict.b += 1
-  test_whole.reinit()
-  test_a.reinit()
-  assert test_whole.ident.captured_hash != init_hash_whole
-  assert test_a.ident.captured_hash == init_hash_a
-  item_dict.a += 1
-  test_a.reinit()
-  assert test_a.ident.captured_hash != init_hash_a
+  init_hash_a = test_a.get_call_hash()
+  init_hash_whole = test_whole.get_call_hash()
+  captured_dict.b += 1
+  assert test_whole.get_call_hash() != init_hash_whole
+  assert test_a.get_call_hash() == init_hash_a
+  captured_dict.a += 1
+  assert test_a.get_call_hash() != init_hash_a
+
+  once_capture = next(iter(test_once.ident.capturables))
+  assert once_capture.attr_path == ("captured_dict_once",) and isinstance(once_capture.hash, str)
+
+def test_capture_hashby():
+  @checkpoint
+  def fn():
+    return sum(nums)
+
+  captures = [capturable.capture() for capturable in fn.ident.capturables]
+  assert nums != sorted(nums)
+  assert captures == [("checkpointer/test_checkpointer.py-nums", sorted(nums))]
 
 def test_depends():
   def multiply_wrapper(a: int, b: int) -> int:

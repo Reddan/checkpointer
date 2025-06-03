@@ -47,7 +47,7 @@ dev = [
 ]
 
 [tool.poe.tasks]
-tests = "pytest checkpointer/test_checkpointer.py"
+tests = "pytest checkpointer/**/test_*.py"
 tests-debug = "poe tests -s"
 
 [build-system]

@@ -3,17 +3,17 @@ import re
 from datetime import datetime
 from functools import cached_property, update_wrapper
 from inspect import Parameter, iscoroutine, signature, unwrap
+from itertools import chain
 from pathlib import Path
 from typing import (
-  Annotated, Callable, Concatenate, Coroutine, Generic,
-  Iterable, Literal, Self, Type, TypedDict,
-  Unpack, cast, get_args, get_origin, overload,
+  Callable, Concatenate, Coroutine, Generic, Iterable,
+  Literal, Self, Type, TypedDict, Unpack, cast, overload,
 )
-from .fn_ident import RawFunctionIdent, get_fn_ident
+from .fn_ident import Capturable, RawFunctionIdent, get_fn_ident
 from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
 from .storages import STORAGE_MAP, Storage, StorageType
-from .types import AwaitableValue, C, Coro, Fn, HashBy, P, R
+from .types import AwaitableValue, C, Coro, Fn, P, R, hash_by_from_annotation
 
 DEFAULT_DIR = Path.home() / ".cache/checkpoints"
 
@@ -79,9 +79,12 @@ class FunctionIdent:
     return str(ObjectHash(digest_size=16).write_text(iter=deep_hashes))
 
   @cached_property
-  def captured_hash(self) -> str:
-    deep_hashes = [depend.raw_ident.captured_hash for depend in self.deep_idents()]
-    return str(ObjectHash().write_text(iter=deep_hashes))
+  def capturables(self) -> list[Capturable]:
+    return sorted({
+      capturable.key: capturable
+      for depend in self.deep_idents()
+      for capturable in depend.raw_ident.capturables
+    }.values())
 
   def deep_depends(self, past_static=True, visited: set[Callable] = set()) -> Iterable[Callable]:
     if self.cached_fn not in visited:
@@ -154,8 +157,14 @@ class CachedFunction(Generic[Fn]):
         if hash_by := hash_by_map.get(key, rest_hash_by):
           named_args[key] = hash_by(value)
       if pos_hash_by := hash_by_map.get(b"*"):
-        pos_args = tuple(map(pos_hash_by, pos_args))
-    return str(ObjectHash(named_args, pos_args, self.ident.captured_hash, digest_size=16))
+        pos_args = map(pos_hash_by, pos_args)
+    named_args_iter = chain.from_iterable(sorted(named_args.items()))
+    captured = chain.from_iterable(capturable.capture() for capturable in self.ident.capturables)
+    obj_hash = ObjectHash(digest_size=16) \
+      .update(iter=named_args_iter, header="NAMED") \
+      .update(iter=pos_args, header="POS") \
+      .update(iter=captured, header="CAPTURED")
+    return str(obj_hash)
 
   def get_call_hash(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> str:
     return self._get_call_hash(args, kw)
@@ -224,13 +233,6 @@ class CachedFunction(Generic[Fn]):
 
   def __repr__(self) -> str:
     return f"<CachedFunction {self.fn.__name__} {self.ident.fn_hash[:6]}>"
-
-def hash_by_from_annotation(annotation: type) -> Callable[[object], object] | None:
-  if get_origin(annotation) is Annotated:
-    args = get_args(annotation)
-    metadata = args[1] if len(args) > 1 else None
-    if get_origin(metadata) is HashBy:
-      return get_args(metadata)[0]
 
 def get_hash_by_map(params: list[Parameter]) -> dict[str | bytes, Callable[[object], object]]:
   hash_by_map = {}

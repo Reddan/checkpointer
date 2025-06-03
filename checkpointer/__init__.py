@@ -4,7 +4,7 @@ from typing import Callable
 from .checkpoint import CachedFunction, Checkpointer, CheckpointError, FunctionIdent
 from .object_hash import ObjectHash
 from .storages import MemoryStorage, PickleStorage, Storage
-from .types import AwaitableValue, HashBy, NoHash
+from .types import AwaitableValue, Captured, CapturedOnce, CaptureMe, CaptureMeOnce, HashBy, NoHash
 
 checkpoint = Checkpointer()
 capture_checkpoint = Checkpointer(capture=True)

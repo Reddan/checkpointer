@@ -76,9 +76,12 @@ class ObjectHash:
   def header(self, *args: object) -> Self:
     return self.write_bytes(":".join(map(str, args)).encode())
 
-  def update(self, *objs: object, iter: Iterable[object] = (), tolerable: bool | None=None) -> Self:
+  def update(self, *objs: object, iter: Iterable[object] = (), tolerable: bool | None=None, header: str | None = None) -> Self:
     with nullcontext() if tolerable is None else self.tolerable.set(tolerable):
       for obj in chain(objs, iter):
+        if header is not None:
+          self.write_bytes(header.encode())
+          header = None
         try:
           self._update_one(obj)
         except Exception as ex:
