@@ -95,7 +95,6 @@ class CachedFunction(Generic[Fn]):
     self.storage = Storage(self)
     self.cleanup = self.storage.cleanup
     self.bound = ()
-    self.attrname: str | None = None
 
     sig = signature(wrapped)
     params = list(sig.parameters.items())
@@ -105,10 +104,6 @@ class CachedFunction(Generic[Fn]):
     self.hash_by_map = get_hash_by_map(sig)
     self.ident = FunctionIdent(self)
 
-  def __set_name__(self, _, name: str):
-    assert self.attrname is None
-    self.attrname = name
-
   @overload
   def __get__(self: Self, instance: None, owner: Type[C]) -> Self: ...
   @overload
@@ -116,12 +111,9 @@ class CachedFunction(Generic[Fn]):
   def __get__(self, instance, owner):
     if instance is None:
       return self
-    assert self.attrname is not None
     bound_fn = object.__new__(CachedFunction)
     bound_fn.__dict__ |= self.__dict__
     bound_fn.bound = (instance,)
-    if hasattr(instance, "__dict__"):
-      setattr(instance, self.attrname, bound_fn)
     return bound_fn
 
   @property
