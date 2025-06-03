@@ -63,15 +63,19 @@ class FunctionIdent:
   def reset(self):
     self.__init__(self.cached_fn)
 
+  def is_static(self) -> bool:
+    return self.cached_fn.checkpointer.fn_hash_from is not None
+
   @cached_property
   def raw_ident(self) -> RawFunctionIdent:
     return get_fn_ident(unwrap(self.cached_fn.fn), self.cached_fn.checkpointer.capture)
 
   @cached_property
   def fn_hash(self) -> str:
-    if (hash_from := self.cached_fn.checkpointer.fn_hash_from) is not None:
-      return str(ObjectHash(hash_from, digest_size=16))
-    deep_hashes = [depend.raw_ident.fn_hash for depend in self.deep_idents()]
+    if self.is_static():
+      return str(ObjectHash(self.cached_fn.checkpointer.fn_hash_from, digest_size=16))
+    depends = self.deep_idents(past_static=False)
+    deep_hashes = [d.fn_hash if d.is_static() else d.raw_ident.fn_hash for d in depends]
     return str(ObjectHash(digest_size=16).write_text(iter=deep_hashes))
 
   @cached_property
@@ -79,20 +83,22 @@ class FunctionIdent:
     deep_hashes = [depend.raw_ident.captured_hash for depend in self.deep_idents()]
     return str(ObjectHash().write_text(iter=deep_hashes))
 
-  def deep_depends(self, visited: set[Callable] = set()) -> Iterable[Callable]:
+  def deep_depends(self, past_static=True, visited: set[Callable] = set()) -> Iterable[Callable]:
     if self.cached_fn not in visited:
       yield self.cached_fn
       visited = visited or set()
       visited.add(self.cached_fn)
-      for depend in self.raw_ident.depends:
+      stop = not past_static and self.is_static()
+      depends = [] if stop else self.raw_ident.depends
+      for depend in depends:
         if isinstance(depend, CachedFunction):
-          yield from depend.ident.deep_depends(visited)
+          yield from depend.ident.deep_depends(past_static, visited)
         elif depend not in visited:
           yield depend
           visited.add(depend)
 
-  def deep_idents(self) -> Iterable[FunctionIdent]:
-    return (fn.ident for fn in self.deep_depends() if isinstance(fn, CachedFunction))
+  def deep_idents(self, past_static=True) -> Iterable[FunctionIdent]:
+    return (fn.ident for fn in self.deep_depends(past_static) if isinstance(fn, CachedFunction))
 
 class CachedFunction(Generic[Fn]):
   def __init__(self, checkpointer: Checkpointer, fn: Fn):
