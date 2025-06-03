@@ -1,7 +1,7 @@
 import gc
 import tempfile
 from typing import Callable
-from .checkpoint import CachedFunction, Checkpointer, CheckpointError
+from .checkpoint import CachedFunction, Checkpointer, CheckpointError, FunctionIdent
 from .object_hash import ObjectHash
 from .storages import MemoryStorage, PickleStorage, Storage
 from .types import AwaitableValue, HashBy, NoHash

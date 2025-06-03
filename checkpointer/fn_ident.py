@@ -1,34 +1,30 @@
 import dis
-import inspect
-from itertools import takewhile
-from pathlib import Path
-from types import CodeType, FunctionType, MethodType
-from typing import Callable, Iterable, NamedTuple, Type, TypeGuard
+from inspect import unwrap
+from types import CodeType, MethodType
+from typing import Callable, Iterable, NamedTuple, Type
 from .object_hash import ObjectHash
-from .utils import AttrDict, distinct, get_cell_contents, iterate_and_upcoming, unwrap_fn
+from .utils import AttrDict, distinct, get_cell_contents, is_class, is_user_fn, seekable, takewhile
 
-cwd = Path.cwd().resolve()
+AttrPath = tuple[str, ...]
 
 class RawFunctionIdent(NamedTuple):
   fn_hash: str
   captured_hash: str
   depends: list[Callable]
 
-def is_class(obj) -> TypeGuard[Type]:
-  # isinstance works too, but needlessly triggers _lazyinit()
-  return issubclass(type(obj), type)
-
 def extract_classvars(code: CodeType, scope_vars: AttrDict) -> dict[str, dict[str, Type]]:
-  attr_path: tuple[str, ...] = ()
+  attr_path = AttrPath(())
   scope_obj = None
   classvars: dict[str, dict[str, Type]] = {}
-  for instr, upcoming_instrs in iterate_and_upcoming(dis.get_instructions(code)):
+  instructs = seekable(dis.get_instructions(code))
+  for instr in instructs:
     if instr.opname in scope_vars and not attr_path:
-      attrs = takewhile(lambda instr: instr.opname == "LOAD_ATTR", upcoming_instrs)
-      attr_path = (instr.opname, instr.argval, *(str(x.argval) for x in attrs))
+      attrs = takewhile((x.opname == "LOAD_ATTR", x.argval) for x in instructs)
+      attr_path = AttrPath((instr.opname, instr.argval, *attrs))
+      instructs.step(-1)
     elif instr.opname == "CALL":
-      obj = scope_vars.get_at(attr_path)
-      attr_path = ()
+      obj = scope_vars.get_at(*attr_path)
+      attr_path = AttrPath(())
       if is_class(obj):
         scope_obj = obj
     elif instr.opname in ("STORE_FAST", "STORE_DEREF") and scope_obj:
@@ -37,16 +33,18 @@ def extract_classvars(code: CodeType, scope_vars: AttrDict) -> dict[str, dict[st
       scope_obj = None
   return classvars
 
-def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Iterable[tuple[tuple[str, ...], object]]:
+def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Iterable[tuple[AttrPath, object]]:
   classvars = extract_classvars(code, scope_vars)
   scope_vars = scope_vars.set({k: scope_vars[k].set(v) for k, v in classvars.items()})
-  for instr, upcoming_instrs in iterate_and_upcoming(dis.get_instructions(code)):
+  instructs = seekable(dis.get_instructions(code))
+  for instr in instructs:
     if instr.opname in scope_vars:
-      attrs = takewhile(lambda instr: instr.opname == "LOAD_ATTR", upcoming_instrs)
-      attr_path: tuple[str, ...] = (instr.opname, instr.argval, *(str(x.argval) for x in attrs))
-      val = scope_vars.get_at(attr_path)
-      if val is not None:
-        yield attr_path, val
+      attrs = takewhile((x.opname == "LOAD_ATTR", x.argval) for x in instructs)
+      attr_path = AttrPath((instr.opname, instr.argval, *attrs))
+      instructs.step(-1)
+      obj = scope_vars.get_at(*attr_path)
+      if obj is not None:
+        yield attr_path, obj
   for const in code.co_consts:
     if isinstance(const, CodeType):
       yield from extract_scope_values(const, scope_vars)
@@ -54,8 +52,8 @@ def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Iterable[tuple
 def get_self_value(fn: Callable) -> type | object | None:
   if isinstance(fn, MethodType):
     return fn.__self__
-  parts = tuple(fn.__qualname__.split(".")[:-1])
-  cls = parts and AttrDict(fn.__globals__).get_at(parts)
+  parts = fn.__qualname__.split(".")[:-1]
+  cls = parts and AttrDict(fn.__globals__).get_at(*parts)
   if is_class(cls):
     return cls
 
@@ -69,12 +67,6 @@ def get_fn_captured_vals(fn: Callable) -> list[object]:
   vals = dict(extract_scope_values(fn.__code__, scope_vars))
   return list(vals.values())
 
-def is_user_fn(candidate_fn) -> TypeGuard[Callable]:
-  if not isinstance(candidate_fn, (FunctionType, MethodType)):
-    return False
-  fn_path = Path(inspect.getfile(candidate_fn)).resolve()
-  return cwd in fn_path.parents and ".venv" not in fn_path.parts
-
 def get_depend_fns(fn: Callable, captured_vals_by_fn: dict[Callable, list[object]] = {}) -> dict[Callable, list[object]]:
   from .checkpoint import CachedFunction
   captured_vals = get_fn_captured_vals(fn)
@@ -83,7 +75,7 @@ def get_depend_fns(fn: Callable, captured_vals_by_fn: dict[Callable, list[object
   for val in captured_vals:
     if not callable(val):
       continue
-    child_fn = unwrap_fn(val, cached_fn=True)
+    child_fn = unwrap(val, stop=lambda f: isinstance(f, CachedFunction))
     if isinstance(child_fn, CachedFunction):
       captured_vals_by_fn[child_fn] = []
     elif child_fn not in captured_vals_by_fn and is_user_fn(child_fn):

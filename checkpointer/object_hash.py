@@ -12,7 +12,7 @@ from io import StringIO
 from itertools import chain
 from pickle import HIGHEST_PROTOCOL as PICKLE_PROTOCOL
 from types import BuiltinFunctionType, FunctionType, GeneratorType, MethodType, ModuleType, UnionType
-from typing import Callable, TypeVar
+from typing import Callable, Self, TypeVar
 from .utils import ContextVar
 
 np, torch = None, None
@@ -43,14 +43,14 @@ class ObjectHashError(Exception):
     self.obj = obj
 
 class ObjectHash:
-  def __init__(self, *objs: object, iter: Iterable[object] = (), digest_size=64, tolerate_errors=False) -> None:
+  def __init__(self, *objs: object, iter: Iterable[object] = (), digest_size=64, tolerable=False) -> None:
     self.hash = hashlib.blake2b(digest_size=digest_size)
     self.current: dict[int, int] = {}
-    self.tolerate_errors = ContextVar(tolerate_errors)
+    self.tolerable = ContextVar(tolerable)
     self.update(iter=chain(objs, iter))
 
   def copy(self) -> "ObjectHash":
-    new = ObjectHash(tolerate_errors=self.tolerate_errors.value)
+    new = ObjectHash(tolerable=self.tolerable.value)
     new.hash = self.hash.copy()
     return new
 
@@ -63,26 +63,26 @@ class ObjectHash:
     return isinstance(value, ObjectHash) and str(self) == str(value)
 
   def nested_hash(self, *objs: object) -> str:
-    return ObjectHash(iter=objs, tolerate_errors=self.tolerate_errors.value).hexdigest()
+    return ObjectHash(iter=objs, tolerable=self.tolerable.value).hexdigest()
 
-  def write_bytes(self, *data: bytes, iter: Iterable[bytes] = ()) -> "ObjectHash":
+  def write_bytes(self, *data: bytes, iter: Iterable[bytes] = ()) -> Self:
     for d in chain(data, iter):
       self.hash.update(d)
     return self
 
-  def write_text(self, *data: str, iter: Iterable[str] = ()) -> "ObjectHash":
+  def write_text(self, *data: str, iter: Iterable[str] = ()) -> Self:
     return self.write_bytes(iter=(d.encode() for d in chain(data, iter)))
 
-  def header(self, *args: object) -> "ObjectHash":
+  def header(self, *args: object) -> Self:
     return self.write_bytes(":".join(map(str, args)).encode())
 
-  def update(self, *objs: object, iter: Iterable[object] = (), tolerate_errors: bool | None=None) -> "ObjectHash":
-    with nullcontext() if tolerate_errors is None else self.tolerate_errors.set(tolerate_errors):
+  def update(self, *objs: object, iter: Iterable[object] = (), tolerable: bool | None=None) -> Self:
+    with nullcontext() if tolerable is None else self.tolerable.set(tolerable):
       for obj in chain(objs, iter):
         try:
           self._update_one(obj)
         except Exception as ex:
-          if self.tolerate_errors.value:
+          if self.tolerable.value:
             self.header("error").update(type(ex))
           else:
             raise ObjectHashError(obj, ex) from ex
@@ -180,10 +180,10 @@ class ObjectHash:
         finally:
           del self.current[id(obj)]
 
-  def _update_iterator(self, obj: Iterable) -> "ObjectHash":
+  def _update_iterator(self, obj: Iterable) -> Self:
     return self.header("iterator", encode_type_of(obj)).update(iter=obj).header("iterator-end")
 
-  def _update_object(self, obj: object) -> "ObjectHash":
+  def _update_object(self, obj: object) -> Self:
     self.header("instance", encode_type_of(obj))
     get_hash = hasattr(obj, "__objecthash__") and getattr(obj, "__objecthash__")
     if callable(get_hash):
