@@ -8,11 +8,28 @@ authors = [
 ]
 description = "checkpointer adds code-aware caching to Python functions, maintaining correctness and speeding up execution as your code changes."
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE", "ATTRIBUTION.md"]
 classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+]
+keywords = [
+  "cache",
+  "caching",
+  "memoize",
+  "memoization",
+  "performance",
+  "fast",
+  "memory",
+  "invalidation",
+  "code-aware",
+  "optimization",
+  "hashing",
+  "async",
+  "workflow",
+  "decorator",
 ]
 
 [project.urls]
@@ -39,6 +56,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["checkpointer", "checkpointer.storages"]
+
+[tool.hatch.build]
+exclude = ["test_*.py"]
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "session"
