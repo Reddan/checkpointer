@@ -1,7 +1,7 @@
 import dis
-from inspect import getmodule, unwrap
+from inspect import Parameter, getmodule, signature, unwrap
 from types import CodeType, MethodType, ModuleType
-from typing import Callable, Iterable, NamedTuple, Type
+from typing import Annotated, Callable, Iterable, NamedTuple, Type, get_args, get_origin
 from .import_mappings import resolve_annotation
 from .object_hash import ObjectHash
 from .types import hash_by_from_annotation, is_capture_me, is_capture_me_once, to_none
@@ -81,7 +81,18 @@ def extract_scope_values(code: CodeType, scope_vars: AttrDict) -> Iterable[tuple
         yield parent_path, parent_obj
   for const in code.co_consts:
     if isinstance(const, CodeType):
-      yield from extract_scope_values(const, scope_vars)
+      next_deref = scope_vars.LOAD_DEREF.set(scope_vars.LOAD_FAST)
+      next_scope_vars = AttrDict({**scope_vars, "LOAD_FAST": {}, "LOAD_DEREF": next_deref})
+      yield from extract_scope_values(const, next_scope_vars)
+
+def resolve_class_annotations(anno: object) -> Type | None:
+  if anno in (None, Annotated):
+    return None
+  elif is_class(anno):
+    return anno
+  elif get_origin(anno) is Annotated:
+    return resolve_class_annotations(next(iter(get_args(anno)), None))
+  return resolve_class_annotations(get_origin(anno))
 
 def get_self_value(fn: Callable) -> type | object | None:
   if isinstance(fn, MethodType):
@@ -105,9 +116,16 @@ def get_capturables(fn: Callable, capture: bool, captured_vars: dict[AttrPath, o
           yield Capturable.new(module, attr_path, hash_by, is_capture_me_once(anno))
 
 def get_fn_captures(fn: Callable, capture: bool) -> tuple[list[Callable], list[Capturable]]:
+  sig_scope = {
+    param.name: class_anno
+    for param in signature(fn).parameters.values()
+    if param.annotation is not Parameter.empty
+    if param.kind not in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD)
+    if (class_anno := resolve_class_annotations(param.annotation))
+  }
   self_value = get_self_value(fn)
   scope_vars = AttrDict({
-    "LOAD_FAST": AttrDict({"self": self_value} if self_value else {}),
+    "LOAD_FAST": AttrDict({**sig_scope, "self": self_value} if self_value else sig_scope),
     "LOAD_DEREF": AttrDict(get_cell_contents(fn)),
     "LOAD_GLOBAL": AttrDict(fn.__globals__),
   })

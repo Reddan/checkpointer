@@ -60,15 +60,23 @@ def test_method_capturing():
   @checkpoint
   def some_fn():
     obj = TestClass(10)
+    # BUG: isn't captured when put in a closure like in `some_fn_arg`
     return obj.add_and_square(5)
 
   @checkpoint
   def some_capturing_fn():
     return test_obj.add_and_square(5)
 
+  @checkpoint
+  def some_fn_arg(obj: TestClass):
+    def closure():
+      return obj.add_and_square(5)
+    return closure()
+
   depends1 = get_depend_callables(some_fn)
   depends2 = get_depend_callables(some_capturing_fn)
-  assert depends1 == depends2 == {TestClass.add_and_square.fn, square}
+  depends3 = get_depend_callables(some_fn_arg)
+  assert depends1 == depends2 == depends3 == {TestClass.add_and_square.fn, square}
   assert some_capturing_fn.ident.capturables[0].capture()[1] == test_obj
 
 def test_decorated_method():
