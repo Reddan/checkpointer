@@ -26,81 +26,91 @@ result = expensive_function(4)  # Loads from the cache
 
 ## 🧠 How It Works
 
-When a `@checkpoint`-decorated function is called, `checkpointer` first computes a unique identifier (hash) for the call. This hash is derived from the function's source code, its dependencies, and the arguments passed.
+When a `@checkpoint`-decorated function is called, `checkpointer` computes a unique identifier for the call. This identifier derives from the function's source code, its dependencies, captured variables, and the arguments passed.
 
-It then tries to retrieve a cached result using this ID. If a valid cached result is found, it's returned immediately. Otherwise, the original function executes, its result is stored, and then returned.
+It then tries to retrieve a cached result using this identifier. If a valid cached result is found, it's returned immediately. Otherwise, the original function executes, its result is stored, and then returned.
 
-Cache validity is determined by this function's hash, which automatically updates if:
+### 🚨 What Triggers Cache Invalidation?
 
-* **Function Code Changes**: The decorated function's source code is modified.
-* **Dependencies Change**: Any user-defined function in its dependency tree (direct or indirect, even across modules or not decorated) is modified.
-* **Captured Variables Change** (with `capture=True`): Global or closure-based variables used within the function are altered.
+`checkpointer` maintains cache correctness using two types of hashes:
 
-**Example: Dependency Invalidation**
+#### 1. Function Identity Hash (One-Time per Function)
 
-```python
-def multiply(a, b):
-    return a * b
+This hash represents the decorated function itself and is computed once (usually on first invocation). It covers:
 
-@checkpoint
-def helper(x):
-    # Depends on `multiply`
-    return multiply(x + 1, 2)
+* **Decorated Function's Code:**\
+    The function's logic and signature (excluding parameter type annotations) are hashed. Formatting changes like whitespace, newlines, comments, or trailing commas do **not** cause invalidation.
 
-@checkpoint
-def compute(a, b):
-    # Depends on `helper` and `multiply`
-    return helper(a) + helper(b)
-```
+* **Dependencies:**\
+    All user-defined functions and methods the function calls or uses are included recursively. Dependencies are detected by:
+    * Inspecting the function's global scope for referenced functions/objects.
+    * Inferring from argument type annotations.
+    * Analyzing object constructions and method calls to identify classes and methods used.
 
-If `multiply` is modified, caches for both `helper` and `compute` are automatically invalidated and recomputed.
+* **Top-Level Module Code:**\
+    Changes unrelated to the function or its dependencies in the module do **not** trigger invalidation.
+
+#### 2. Call Hash (Computed on Every Function Call)
+
+Each function call's cache key (the **call hash**) combines:
+
+* **Passed Arguments:**\
+    Includes positional and keyword arguments, combined with default values. Changing defaults alone doesn't necessarily trigger invalidation unless it affects actual call values.
+
+* **Captured Global Variables:**\
+    When `capture=True` or explicit capture annotations are used, `checkpointer` hashes global variables referenced by the function:
+    * `CaptureMe` variables are hashed on every call, so changes trigger invalidation.
+    * `CaptureMeOnce` variables are hashed once per session for performance optimization.
+
+* **Custom Argument Hashing:**\
+    Using `HashBy` annotations, arguments or captured variables can be transformed before hashing (e.g., sorting lists to ignore order), allowing more precise or efficient call hashes.
 
 ## 💡 Usage
 
 Once a function is decorated with `@checkpoint`, you can interact with its caching behavior using the following methods:
 
 * **`expensive_function(...)`**:\
-    Call the function normally. This will either compute and cache the result or load it from the cache if available.
+    Call the function normally. This will compute and cache the result or load it from cache.
 
 * **`expensive_function.rerun(...)`**:\
-    Forces the original function to execute, compute a new result, and overwrite any existing cached value for the given arguments.
+    Force the original function to execute and overwrite any existing cached result.
 
 * **`expensive_function.fn(...)`**:\
-    Calls the original, undecorated function directly, bypassing the cache entirely. This is particularly useful within recursive functions to prevent caching intermediate steps.
+    Call the undecorated function directly, bypassing the cache (useful in recursion to prevent caching intermediate steps).
 
 * **`expensive_function.get(...)`**:\
-    Attempts to retrieve the cached result for the given arguments without executing the original function. Raises `CheckpointError` if no valid cached result exists.
+    Retrieve the cached result without executing the function. Raises `CheckpointError` if no valid cache exists.
 
 * **`expensive_function.exists(...)`**:\
-    Checks if a cached result exists for the given arguments without attempting to compute or load it. Returns `True` if a valid checkpoint exists, `False` otherwise.
+    Check if a cached result exists without computing or loading it.
 
 * **`expensive_function.delete(...)`**:\
-    Removes the cached entry for the specified arguments.
+    Remove the cached entry for given arguments.
 
-* **`expensive_function.reinit()`**:\
-    Recalculates the function's internal hash. This is primarily used when `capture=True` and you need to update the cache based on changes to external variables within the same Python session.
+* **`expensive_function.reinit(recursive: bool = False)`**:\
+    Recalculate the function identity hash and recapture `CaptureMeOnce` variables, updating the cached function state within the same Python session.
 
 ## ⚙️ Configuration & Customization
 
-The `@checkpoint` decorator accepts the following parameters to customize its behavior:
+The `@checkpoint` decorator accepts the following parameters:
 
 * **`storage`** (Type: `str` or `checkpointer.Storage`, Default: `"pickle"`)\
-    Defines the storage backend to use. Built-in options are `"pickle"` (disk-based, persistent) and `"memory"` (in-memory, non-persistent). You can also provide a custom `Storage` class.
+    Storage backend to use: `"pickle"` (disk-based, persistent), `"memory"` (in-memory, non-persistent), or a custom `Storage` class.
 
 * **`directory`** (Type: `str` or `pathlib.Path` or `None`, Default: `~/.cache/checkpoints`)\
-    The base directory for storing disk-based checkpoints. This parameter is only relevant when `storage` is set to `"pickle"`.
+    Base directory for disk-based checkpoints (only for `"pickle"` storage).
 
 * **`when`** (Type: `bool`, Default: `True`)\
-    A boolean flag to enable or disable checkpointing for the decorated function. This is particularly useful for toggling caching based on environment variables (e.g., `when=os.environ.get("ENABLE_CACHING", "false").lower() == "true"`).
+    Enable or disable checkpointing dynamically, useful for environment-based toggling.
 
 * **`capture`** (Type: `bool`, Default: `False`)\
-    If set to `True`, `checkpointer` includes global or closure-based variables used by the function in its hash calculation. This ensures that changes to these external variables also trigger cache invalidation and recomputation.
+    If `True`, includes global variables referenced by the function in call hashes (except those excluded via `NoHash`).
 
 * **`should_expire`** (Type: `Callable[[datetime.datetime], bool]`, Default: `None`)\
     A custom callable that receives the `datetime` timestamp of a cached result. It should return `True` if the cached result is considered expired and needs recomputation, or `False` otherwise.
 
 * **`fn_hash_from`** (Type: `Any`, Default: `None`)\
-    This allows you to override the automatically computed function hash, giving you explicit control over when the function's cache should be invalidated. You can pass any object relevant to your invalidation logic (e.g., version strings, config parameters). The object you provide will be hashed internally by `checkpointer`.
+    Override the computed function identity hash with any hashable object you provide (e.g., version strings, config IDs). This gives you explicit control over the function's version and when its cache should be invalidated.
 
 * **`verbosity`** (Type: `int` (`0`, `1`, or `2`), Default: `1`)\
     Controls the level of logging output from `checkpointer`.
@@ -110,13 +120,13 @@ The `@checkpoint` decorator accepts the following parameters to customize its be
 
 ## 🔬 Customize Argument Hashing
 
-You can customize how individual function arguments are hashed without changing their actual values when passed in.
+You can customize how arguments are hashed without modifying the actual argument values to improve cache hit rates or speed up hashing.
 
 * **`Annotated[T, HashBy[fn]]`**:\
-    Hashes the argument by applying `fn(argument)` before hashing. This enables custom normalization (e.g., sorting lists to ignore order) or optimized hashing for complex types, improving cache hit rates or speeding up hashing.
+    Transform the argument via `fn(argument)` before hashing. Useful for normalization (e.g., sorting lists) or optimized hashing for complex inputs.
 
 * **`NoHash[T]`**:\
-    Completely excludes the argument from hashing, so changes to it won’t trigger cache invalidation.
+    Exclude the argument from hashing completely, so changes to it won't trigger cache invalidation.
 
 **Example:**
 
@@ -138,15 +148,51 @@ def process(
     ...
 ```
 
-In this example, the cache key for `numbers` ignores order, `data_file` is hashed based on its contents rather than path, and changes to `log` don’t affect caching.
+In this example, the hash for `numbers` ignores order, `data_file` is hashed based on its contents rather than path, and changes to `log` don't affect caching.
+
+## 🎯 Capturing Global Variables
+
+`checkpointer` can include **captured global variables** in call hashes - these are globals your function reads during execution that may affect results.
+
+Use `capture=True` on `@checkpoint` to capture **all** referenced globals (except those explicitly excluded with `NoHash`).
+
+Alternatively, you can **opt-in selectively** by annotating globals with:
+
+* **`CaptureMe[T]`**:\
+    Capture the variable on every call (triggers invalidation on changes).
+
+* **`CaptureMeOnce[T]`**:\
+    Capture once per Python session (for expensive, immutable globals).
+
+You can also combine these with `HashBy` to customize how captured variables are hashed (e.g., hash by subset of attributes).
+
+**Example:**
+
+```python
+from typing import Annotated
+from checkpointer import checkpoint, CaptureMe, CaptureMeOnce, HashBy
+from pathlib import Path
+
+def file_bytes(path: Path) -> bytes:
+    return path.read_bytes()
+
+captured_data: CaptureMe[Annotated[Path, HashBy[file_bytes]]] = Path("data.txt")
+session_config: CaptureMeOnce[dict] = {"mode": "prod"}
+
+@checkpoint
+def process():
+    # `captured_data` is included in the call hash on every call, hashed by file content
+    # `session_config` is hashed once per session
+    ...
+```
 
 ## 🗄️ Custom Storage Backends
 
-For integration with databases, cloud storage, or custom serialization, implement your own storage backend by inheriting from `checkpointer.Storage` and implementing its abstract methods.
+Implement your own storage backend by subclassing `checkpointer.Storage` and overriding required methods.
 
-Within custom storage methods, `call_hash` identifies calls by arguments. Use `self.fn_id()` to get the function's unique identity (name + hash/version), crucial for organizing stored checkpoints (e.g., by function version). Access global `Checkpointer` config via `self.checkpointer`.
+Within storage methods, `call_hash` identifies calls by arguments. Use `self.fn_id()` to get function identity (name + hash/version), important for organizing checkpoints.
 
-**Example: Custom Storage Backend**
+**Example:**
 
 ```python
 from checkpointer import checkpoint, Storage
@@ -154,13 +200,12 @@ from datetime import datetime
 
 class MyCustomStorage(Storage):
     def exists(self, call_hash):
-        # Example: Constructing a path based on function ID and call ID
         fn_dir = self.checkpointer.directory / self.fn_id()
         return (fn_dir / call_hash).exists()
 
     def store(self, call_hash, data):
-        ... # Store the serialized data for `call_hash`
-        return data # This method must return the data back to checkpointer
+        ...  # Store serialized data
+        return data  # Must return data to checkpointer
 
     def checkpoint_date(self, call_hash): ...
     def load(self, call_hash): ...
@@ -171,27 +216,9 @@ def custom_cached_function(x: int):
     return x ** 2
 ```
 
-## 🧱 Layered Caching
-
-You can apply multiple `@checkpoint` decorators to a single function to create layered caching strategies. `checkpointer` processes these decorators from bottom to top, meaning the decorator closest to the function definition is evaluated first.
-
-This is useful for scenarios like combining a fast, ephemeral cache (e.g., in-memory) with a persistent, slower cache (e.g., disk-based).
-
-**Example: Memory Cache over Disk Cache**
-
-```python
-from checkpointer import checkpoint
-
-@checkpoint(format="memory") # Layer 2: Fast, ephemeral in-memory cache
-@checkpoint(format="pickle") # Layer 1: Persistent disk cache
-def some_expensive_operation():
-    print("Performing a time-consuming operation...")
-    return sum(i for i in range(10**7))
-```
-
 ## ⚡ Async Support
 
-`checkpointer` works seamlessly with Python's `asyncio` and other async runtimes.
+`checkpointer` works with Python's `asyncio` and other async runtimes.
 
 ```python
 import asyncio
@@ -204,15 +231,12 @@ async def async_compute_sum(a: int, b: int) -> int:
     return a + b
 
 async def main():
-    # First call computes and caches
     result1 = await async_compute_sum(3, 7)
     print(f"Result 1: {result1}")
 
-    # Second call loads from cache
     result2 = await async_compute_sum(3, 7)
     print(f"Result 2: {result2}")
 
-    # Retrieve from cache without re-running the async function
     result3 = async_compute_sum.get(3, 7)
     print(f"Result 3 (from cache): {result3}")
 
