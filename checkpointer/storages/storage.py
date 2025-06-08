@@ -8,14 +8,15 @@ if TYPE_CHECKING:
 
 class Storage:
   checkpointer: Checkpointer
-  cached_fn: CachedFunction
+  ident: CachedFunction
 
   def __init__(self, cached_fn: CachedFunction):
-    self.checkpointer = cached_fn.checkpointer
+    self.checkpointer = cached_fn.ident.checkpointer
     self.cached_fn = cached_fn
 
   def fn_id(self) -> str:
-    return f"{self.cached_fn.fn_dir}/{self.cached_fn.ident.fn_hash}"
+    ident = self.cached_fn.ident
+    return f"{ident.fn_dir}/{ident.fn_hash}"
 
   def fn_dir(self) -> Path:
     return self.checkpointer.root_path / self.fn_id()

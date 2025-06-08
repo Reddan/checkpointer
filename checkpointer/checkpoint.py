@@ -56,24 +56,46 @@ class FunctionIdent:
   Separated from CachedFunction to prevent hash desynchronization
   among bound instances when `.reinit()` is called.
   """
-  def __init__(self, cached_fn: CachedFunction):
-    self.__dict__.clear()
+  __slots__ = (
+    "checkpointer", "cached_fn", "fn", "fn_dir", "pos_names",
+    "arg_names", "default_args", "hash_by_map", "__dict__",
+  )
+
+  def __init__(self, cached_fn: CachedFunction, checkpointer: Checkpointer, fn: Callable):
+    wrapped = unwrap(fn)
+    fn_file = Path(wrapped.__code__.co_filename).name
+    fn_name = re.sub(r"[^\w.]", "", wrapped.__qualname__)
+    params = list(signature(wrapped).parameters.values())
+    pos_param_types = (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+    named_param_types = (Parameter.KEYWORD_ONLY,) + pos_param_types
+    name_by_kind = {Parameter.VAR_POSITIONAL: b"*", Parameter.VAR_KEYWORD: b"**"}
+    self.checkpointer = checkpointer
     self.cached_fn = cached_fn
+    self.fn = fn
+    self.fn_dir = f"{fn_file}/{fn_name}"
+    self.pos_names = [param.name for param in params if param.kind in pos_param_types]
+    self.arg_names = {param.name for param in params if param.kind in named_param_types}
+    self.default_args = {param.name: param.default for param in params if param.default is not Parameter.empty}
+    self.hash_by_map = {
+      name_by_kind.get(param.kind, param.name): hash_by
+      for param in params
+      if (hash_by := hash_by_from_annotation(param.annotation))
+    }
 
   def reset(self):
-    self.__init__(self.cached_fn)
+    self.__dict__.clear()
 
   def is_static(self) -> bool:
-    return self.cached_fn.checkpointer.fn_hash_from is not None
+    return self.checkpointer.fn_hash_from is not None
 
   @cached_property
   def raw_ident(self) -> RawFunctionIdent:
-    return get_fn_ident(unwrap(self.cached_fn.fn), self.cached_fn.checkpointer.capture)
+    return get_fn_ident(unwrap(self.fn), self.checkpointer.capture)
 
   @cached_property
   def fn_hash(self) -> str:
     if self.is_static():
-      return str(ObjectHash(self.cached_fn.checkpointer.fn_hash_from, digest_size=16))
+      return str(ObjectHash(self.checkpointer.fn_hash_from, digest_size=16))
     depends = self.deep_idents(past_static=False)
     deep_hashes = [d.fn_hash if d.is_static() else d.raw_ident.fn_hash for d in depends]
     return str(ObjectHash(digest_size=16).write_text(iter=deep_hashes))
@@ -105,25 +127,12 @@ class FunctionIdent:
 
 class CachedFunction(Generic[Fn]):
   def __init__(self, checkpointer: Checkpointer, fn: Fn):
-    wrapped = unwrap(fn)
-    fn_file = Path(wrapped.__code__.co_filename).name
-    fn_name = re.sub(r"[^\w.]", "", wrapped.__qualname__)
     store_format = checkpointer.format
     Storage = STORAGE_MAP[store_format] if isinstance(store_format, str) else store_format
-    update_wrapper(cast(Callable, self), wrapped)
-    self.checkpointer = checkpointer
-    self.fn = fn
-    self.fn_dir = f"{fn_file}/{fn_name}"
+    update_wrapper(cast(Callable, self), unwrap(fn))
+    self.ident = FunctionIdent(self, checkpointer, fn)
     self.storage = Storage(self)
-    self.cleanup = self.storage.cleanup
     self.bound = ()
-
-    params = list(signature(wrapped).parameters.values())
-    pos_params = (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
-    self.arg_names = [param.name for param in params if param.kind in pos_params]
-    self.default_args = {param.name: param.default for param in params if param.default is not Parameter.empty}
-    self.hash_by_map = get_hash_by_map(params)
-    self.ident = FunctionIdent(self)
 
   @overload
   def __get__(self: Self, instance: None, owner: Type[C]) -> Self: ...
@@ -142,8 +151,12 @@ class CachedFunction(Generic[Fn]):
     return bound_fn
 
   @property
-  def depends(self) -> list[Callable]:
-    return self.ident.raw_ident.depends
+  def fn(self) -> Fn:
+    return cast(Fn, self.ident.fn)
+
+  @property
+  def cleanup(self):
+    return self.storage.cleanup
 
   def reinit(self, recursive=False) -> CachedFunction[Fn]:
     depend_idents = list(self.ident.deep_idents()) if recursive else [self.ident]
@@ -152,24 +165,26 @@ class CachedFunction(Generic[Fn]):
     return self
 
   def _get_call_hash(self, args: tuple, kw: dict[str, object]) -> str:
+    ident = self.ident
     args = self.bound + args
-    pos_args = args[len(self.arg_names):]
-    named_pos_args = dict(zip(self.arg_names, args))
-    named_args = {**self.default_args, **named_pos_args, **kw}
-    if hash_by_map := self.hash_by_map:
-      rest_hash_by = hash_by_map.get(b"**")
-      for key, value in named_args.items():
-        if hash_by := hash_by_map.get(key, rest_hash_by):
-          named_args[key] = hash_by(value)
-      if pos_hash_by := hash_by_map.get(b"*"):
-        pos_args = map(pos_hash_by, pos_args)
+    pos_args = args[len(ident.pos_names):]
+    named_pos_args = dict(zip(ident.pos_names, args))
+    named_args = {**ident.default_args, **named_pos_args, **kw}
+    for key, hash_by in ident.hash_by_map.items():
+      if isinstance(key, str):
+        named_args[key] = hash_by(named_args[key])
+      elif key == b"*":
+        pos_args = map(hash_by, pos_args)
+      elif key == b"**":
+        for key in kw.keys() - ident.arg_names:
+          named_args[key] = hash_by(named_args[key])
     named_args_iter = chain.from_iterable(sorted(named_args.items()))
-    captured = chain.from_iterable(capturable.capture() for capturable in self.ident.capturables)
-    obj_hash = ObjectHash(digest_size=16) \
+    captured = chain.from_iterable(capturable.capture() for capturable in ident.capturables)
+    call_hash = ObjectHash(digest_size=16) \
       .update(iter=named_args_iter, header="NAMED") \
       .update(iter=pos_args, header="POS") \
       .update(iter=captured, header="CAPTURED")
-    return str(obj_hash)
+    return str(call_hash)
 
   def get_call_hash(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> str:
     return self._get_call_hash(args, kw)
@@ -179,25 +194,26 @@ class CachedFunction(Generic[Fn]):
 
   def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, rerun=False) -> R:
     full_args = self.bound + args
-    params = self.checkpointer
+    params = self.ident.checkpointer
+    storage = self.storage
     if not params.when:
       return self.fn(*full_args, **kw)
 
     call_hash = self._get_call_hash(args, kw)
-    call_id = f"{self.storage.fn_id()}/{call_hash}"
+    call_id = f"{storage.fn_id()}/{call_hash}"
     refresh = rerun \
-      or not self.storage.exists(call_hash) \
-      or (params.should_expire and params.should_expire(self.storage.checkpoint_date(call_hash)))
+      or not storage.exists(call_hash) \
+      or (params.should_expire and params.should_expire(storage.checkpoint_date(call_hash)))
 
     if refresh:
       print_checkpoint(params.verbosity >= 1, "MEMORIZING", call_id, "blue")
       data = self.fn(*full_args, **kw)
       if iscoroutine(data):
         return self._store_coroutine(call_hash, data)
-      return self.storage.store(call_hash, data)
+      return storage.store(call_hash, data)
 
     try:
-      data = self.storage.load(call_hash)
+      data = storage.load(call_hash)
       print_checkpoint(params.verbosity >= 2, "REMEMBERED", call_id, "green")
       return data
     except (EOFError, FileNotFoundError):
@@ -240,14 +256,3 @@ class CachedFunction(Generic[Fn]):
     initialized = "fn_hash" in self.ident.__dict__
     fn_hash = self.ident.fn_hash[:6] if initialized else "- uninitialized"
     return f"<CachedFunction {self.fn.__name__} {fn_hash}>"
-
-def get_hash_by_map(params: list[Parameter]) -> dict[str | bytes, Callable[[object], object]]:
-  hash_by_map = {}
-  for param in params:
-    name = param.name
-    if param.kind == Parameter.VAR_POSITIONAL:
-      name = b"*"
-    elif param.kind == Parameter.VAR_KEYWORD:
-      name = b"**"
-    hash_by_map[name] = hash_by_from_annotation(param.annotation)
-  return hash_by_map if any(hash_by_map.values()) else {}
