@@ -2,6 +2,7 @@ import dis
 from inspect import Parameter, getmodule, signature, unwrap
 from types import CodeType, MethodType, ModuleType
 from typing import Annotated, Callable, Iterable, NamedTuple, Type, get_args, get_origin
+from .fn_string import get_fn_aststr
 from .import_mappings import resolve_annotation
 from .object_hash import ObjectHash
 from .types import hash_by_from_annotation, is_capture_me, is_capture_me_once, to_none
@@ -35,7 +36,7 @@ class Capturable(NamedTuple):
   @staticmethod
   def new(module: ModuleType, attr_path: AttrPath, hash_by: Callable | None, capture_once: bool) -> "Capturable":
     file = str(get_file(module).relative_to(cwd))
-    key = "-".join((file, *attr_path))
+    key = file + "/" + ".".join(attr_path)
     cap = Capturable(key, module, attr_path, hash_by)
     if not capture_once:
       return cap
@@ -154,7 +155,7 @@ def get_fn_ident(fn: Callable, capture: bool) -> RawFunctionIdent:
   capturables = {capt for capts in capturable_by_fn.values() for capt in capts}
   depends = capturable_by_fn.keys()
   depends = distinct(fn.__func__ if isinstance(fn, MethodType) else fn for fn in depends)
-  unwrapped_depends = [fn for fn in depends if not isinstance(fn, CachedFunction)]
-  assert fn == unwrapped_depends[0]
-  fn_hash = str(ObjectHash(iter=unwrapped_depends))
+  depend_callables = [fn for fn in depends if not isinstance(fn, CachedFunction)]
+  assert fn == depend_callables[0]
+  fn_hash = str(ObjectHash(iter=map(get_fn_aststr, depend_callables)))
   return RawFunctionIdent(fn_hash, depends, capturables)

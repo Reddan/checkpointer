@@ -26,6 +26,9 @@ def get_cell_contents(fn: Callable) -> Iterable[tuple[str, object]]:
     with suppress(ValueError):
       yield (key, cell.cell_contents)
 
+def drop_none(iterable: Iterable[T | None]) -> list[T]:
+  return [x for x in iterable if x is not None]
+
 def distinct(seq: Iterable[T]) -> list[T]:
   return list(dict.fromkeys(seq))
 

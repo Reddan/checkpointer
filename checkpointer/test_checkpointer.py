@@ -14,7 +14,7 @@ nums: CaptureMe[Annotated[list[int], HashBy[sorted]]] = [3, 2, 1]
 
 def get_captured_objs(fn: CachedFunction) -> dict[str, object]:
   captures = [capturable.capture() for capturable in fn.ident.capturables]
-  return {".".join(key.split("-")[1:]): value for key, value in captures}
+  return {key.rsplit("/", 1)[1]: value for key, value in captures}
 
 def get_depends(fn: CachedFunction) -> set[Callable]:
   return set(fn.ident.raw_ident.depends)
@@ -49,6 +49,39 @@ test_obj: CaptureMe[TestClass] = TestClass(20)
 def run_before_and_after_tests(tmpdir):
   checkpoint.directory = Path(tmpdir)
   yield
+
+def test_same_fn_hash():
+  @checkpoint
+  def foo(): square(2)
+  @checkpoint
+  def bar(): square(2)
+
+  assert foo.ident.fn_hash == bar.ident.fn_hash
+
+def test_cache_invalidation():
+  def square_1(x: int):
+    return x * x + 0
+
+  def square_2(x: int):
+    return x * x + 0
+
+  def square_3(x: int):
+    return 0 + x * x
+
+  @checkpoint
+  def helper(x: int):
+    return square(x)
+
+  @checkpoint
+  def fn(x: int):
+    return helper(x)
+
+  square = square_1
+  init_fn_hash = fn.ident.fn_hash
+  square = square_2
+  assert init_fn_hash == fn.reinit(recursive=True).ident.fn_hash
+  square = square_3
+  assert init_fn_hash != fn.reinit(recursive=True).ident.fn_hash
 
 def test_inner_capture_resolve_propagates():
   @checkpoint
@@ -99,22 +132,6 @@ def test_decorated_method():
 def test_resolve_annotation():
   anno = resolve_annotation(sys.modules[__name__], "COLOR_MAP")
   assert get_origin(anno) is type(COLOR_MAP)
-
-def test_cache_invalidation():
-  @checkpoint
-  def multiply(a: int, b: int):
-    return a * b
-
-  @checkpoint
-  def helper(x: int):
-    return multiply(x + 1, 2)
-
-  @checkpoint
-  def compute(a: int, b: int):
-    return helper(a) + helper(b)
-
-  result1 = compute(3, 4)
-  assert result1 == 18
 
 def test_layered_caching():
   dev_checkpoint = checkpoint(when=True)
