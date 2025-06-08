@@ -19,7 +19,7 @@ class Storage:
     return f"{ident.fn_dir}/{ident.fn_hash}"
 
   def fn_dir(self) -> Path:
-    return self.checkpointer.root_path / self.fn_id()
+    return self.checkpointer.directory / self.fn_id()
 
   def store(self, call_hash: str, data: Any) -> Any: ...
 

@@ -84,11 +84,11 @@ Once a function is decorated with `@checkpoint`, you can interact with its cachi
 
 The `@checkpoint` decorator accepts the following parameters to customize its behavior:
 
-* **`format`** (Type: `str` or `checkpointer.Storage`, Default: `"pickle"`)\
+* **`storage`** (Type: `str` or `checkpointer.Storage`, Default: `"pickle"`)\
     Defines the storage backend to use. Built-in options are `"pickle"` (disk-based, persistent) and `"memory"` (in-memory, non-persistent). You can also provide a custom `Storage` class.
 
-* **`root_path`** (Type: `str` or `pathlib.Path` or `None`, Default: `~/.cache/checkpoints`)\
-    The base directory for storing disk-based checkpoints. This parameter is only relevant when `format` is set to `"pickle"`.
+* **`directory`** (Type: `str` or `pathlib.Path` or `None`, Default: `~/.cache/checkpoints`)\
+    The base directory for storing disk-based checkpoints. This parameter is only relevant when `storage` is set to `"pickle"`.
 
 * **`when`** (Type: `bool`, Default: `True`)\
     A boolean flag to enable or disable checkpointing for the decorated function. This is particularly useful for toggling caching based on environment variables (e.g., `when=os.environ.get("ENABLE_CACHING", "false").lower() == "true"`).
@@ -155,7 +155,7 @@ from datetime import datetime
 class MyCustomStorage(Storage):
     def exists(self, call_hash):
         # Example: Constructing a path based on function ID and call ID
-        fn_dir = self.checkpointer.root_path / self.fn_id()
+        fn_dir = self.checkpointer.directory / self.fn_id()
         return (fn_dir / call_hash).exists()
 
     def store(self, call_hash, data):
@@ -166,7 +166,7 @@ class MyCustomStorage(Storage):
     def load(self, call_hash): ...
     def delete(self, call_hash): ...
 
-@checkpoint(format=MyCustomStorage)
+@checkpoint(storage=MyCustomStorage)
 def custom_cached_function(x: int):
     return x ** 2
 ```

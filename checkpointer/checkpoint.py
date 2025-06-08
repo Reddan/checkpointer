@@ -21,8 +21,8 @@ class CheckpointError(Exception):
   pass
 
 class CheckpointerOpts(TypedDict, total=False):
-  format: Type[Storage] | StorageType
-  root_path: Path | str | None
+  storage: Type[Storage] | StorageType
+  directory: Path | str | None
   when: bool
   verbosity: Literal[0, 1, 2]
   should_expire: Callable[[datetime], bool] | None
@@ -31,8 +31,8 @@ class CheckpointerOpts(TypedDict, total=False):
 
 class Checkpointer:
   def __init__(self, **opts: Unpack[CheckpointerOpts]):
-    self.format = opts.get("format", "pickle")
-    self.root_path = Path(opts.get("root_path", DEFAULT_DIR) or ".")
+    self.storage = opts.get("storage", "pickle")
+    self.directory = Path(opts.get("directory", DEFAULT_DIR) or ".")
     self.when = opts.get("when", True)
     self.verbosity = opts.get("verbosity", 1)
     self.should_expire = opts.get("should_expire")
@@ -127,7 +127,7 @@ class FunctionIdent:
 
 class CachedFunction(Generic[Fn]):
   def __init__(self, checkpointer: Checkpointer, fn: Fn):
-    store_format = checkpointer.format
+    store_format = checkpointer.storage
     Storage = STORAGE_MAP[store_format] if isinstance(store_format, str) else store_format
     update_wrapper(cast(Callable, self), unwrap(fn))
     self.ident = FunctionIdent(self, checkpointer, fn)

@@ -47,7 +47,7 @@ test_obj: CaptureMe[TestClass] = TestClass(20)
 
 @pytest.fixture(autouse=True)
 def run_before_and_after_tests(tmpdir):
-  checkpoint.root_path = Path(tmpdir)
+  checkpoint.directory = Path(tmpdir)
   yield
 
 def test_inner_capture_resolve_propagates():
@@ -119,7 +119,7 @@ def test_cache_invalidation():
 def test_layered_caching():
   dev_checkpoint = checkpoint(when=True)
 
-  @checkpoint(format="memory")
+  @checkpoint(storage="memory")
   @dev_checkpoint
   def expensive_function(x: int):
     return x ** 2
@@ -146,7 +146,7 @@ def test_recursive_caching2():
 
 @pytest.mark.asyncio
 async def test_async_caching():
-  @checkpoint(format="memory")
+  @checkpoint(storage="memory")
   async def async_square(x: int) -> int:
     await asyncio.sleep(0.1)
     return x ** 2
@@ -164,8 +164,8 @@ def test_force_recalculation():
   assert square.get(5) == 25
 
 def test_multi_layer_decorator():
-  @checkpoint(format="memory")
-  @checkpoint(format="pickle")
+  @checkpoint(storage="memory")
+  @checkpoint(storage="pickle")
   def add(a: int, b: int) -> int:
     return a + b
 

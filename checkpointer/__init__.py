@@ -8,8 +8,8 @@ from .types import AwaitableValue, Captured, CapturedOnce, CaptureMe, CaptureMeO
 
 checkpoint = Checkpointer()
 capture_checkpoint = Checkpointer(capture=True)
-memory_checkpoint = Checkpointer(format="memory", verbosity=0)
-tmp_checkpoint = Checkpointer(root_path=f"{tempfile.gettempdir()}/checkpoints")
+memory_checkpoint = Checkpointer(storage="memory", verbosity=0)
+tmp_checkpoint = Checkpointer(directory=f"{tempfile.gettempdir()}/checkpoints")
 static_checkpoint = Checkpointer(fn_hash_from=())
 
 def cleanup_all(invalidated=True, expired=True):
