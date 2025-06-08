@@ -108,7 +108,8 @@ class CachedFunction(Generic[Fn]):
     wrapped = unwrap(fn)
     fn_file = Path(wrapped.__code__.co_filename).name
     fn_name = re.sub(r"[^\w.]", "", wrapped.__qualname__)
-    Storage = STORAGE_MAP[checkpointer.format] if isinstance(checkpointer.format, str) else checkpointer.format
+    store_format = checkpointer.format
+    Storage = STORAGE_MAP[store_format] if isinstance(store_format, str) else store_format
     update_wrapper(cast(Callable, self), wrapped)
     self.checkpointer = checkpointer
     self.fn = fn
@@ -127,7 +128,11 @@ class CachedFunction(Generic[Fn]):
   @overload
   def __get__(self: Self, instance: None, owner: Type[C]) -> Self: ...
   @overload
-  def __get__(self: CachedFunction[Callable[Concatenate[C, P], R]], instance: C, owner: Type[C]) -> CachedFunction[Callable[P, R]]: ...
+  def __get__(
+    self: CachedFunction[Callable[Concatenate[C, P], R]],
+    instance: C,
+    owner: Type[C],
+  ) -> CachedFunction[Callable[P, R]]: ...
   def __get__(self, instance, owner):
     if instance is None:
       return self
@@ -169,7 +174,7 @@ class CachedFunction(Generic[Fn]):
   def get_call_hash(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> str:
     return self._get_call_hash(args, kw)
 
-  async def _resolve_coroutine(self, call_hash: str, coroutine: Coroutine):
+  async def _store_coroutine(self, call_hash: str, coroutine: Coroutine):
     return self.storage.store(call_hash, AwaitableValue(await coroutine)).value
 
   def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, rerun=False) -> R:
@@ -188,7 +193,7 @@ class CachedFunction(Generic[Fn]):
       print_checkpoint(params.verbosity >= 1, "MEMORIZING", call_id, "blue")
       data = self.fn(*full_args, **kw)
       if iscoroutine(data):
-        return self._resolve_coroutine(call_hash, data)
+        return self._store_coroutine(call_hash, data)
       return self.storage.store(call_hash, data)
 
     try:
@@ -232,7 +237,9 @@ class CachedFunction(Generic[Fn]):
     self.storage.store(self._get_call_hash(args, kw), value)
 
   def __repr__(self) -> str:
-    return f"<CachedFunction {self.fn.__name__} {self.ident.fn_hash[:6]}>"
+    initialized = "fn_hash" in self.ident.__dict__
+    fn_hash = self.ident.fn_hash[:6] if initialized else "- uninitialized"
+    return f"<CachedFunction {self.fn.__name__} {fn_hash}>"
 
 def get_hash_by_map(params: list[Parameter]) -> dict[str | bytes, Callable[[object], object]]:
   hash_by_map = {}

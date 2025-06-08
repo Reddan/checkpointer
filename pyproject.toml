@@ -16,20 +16,18 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 keywords = [
+  "data processing",
+  "data analysis",
   "cache",
   "caching",
-  "memoize",
   "memoization",
   "performance",
-  "fast",
-  "memory",
   "invalidation",
-  "code-aware",
   "optimization",
   "hashing",
-  "async",
   "workflow",
-  "decorator",
+  "async",
+  "fast",
 ]
 
 [project.urls]
@@ -43,7 +41,7 @@ dev = [
   "pytest>=8.3.5",
   "pytest-asyncio>=0.26.0",
   "rich>=14.0.0",
-  "torch>=2.5.1",
+  "torch>=2.6.0",
 ]
 
 [tool.poe.tasks]

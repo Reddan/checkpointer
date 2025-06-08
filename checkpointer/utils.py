@@ -1,6 +1,6 @@
 from __future__ import annotations
 import inspect
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from itertools import islice
 from pathlib import Path
 from types import FunctionType, MethodType, ModuleType
@@ -23,10 +23,8 @@ def is_user_fn(obj) -> TypeGuard[Callable]:
 
 def get_cell_contents(fn: Callable) -> Iterable[tuple[str, object]]:
   for key, cell in zip(fn.__code__.co_freevars, fn.__closure__ or []):
-    try:
+    with suppress(ValueError):
       yield (key, cell.cell_contents)
-    except ValueError:
-      pass
 
 def distinct(seq: Iterable[T]) -> list[T]:
   return list(dict.fromkeys(seq))
@@ -80,6 +78,14 @@ class seekable(Generic[T]):
     with self.freeze():
       return list(islice(self, count))
 
+def get_at(obj: object, *attrs: str) -> object:
+  for attr in attrs:
+    if type(obj) is dict:
+      obj = obj.get(attr, None)
+    else:
+      obj = getattr(obj, attr, None)
+  return obj
+
 class AttrDict(dict):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
@@ -90,17 +96,6 @@ class AttrDict(dict):
 
   def __setattr__(self, name: str, value: object):
     super().__setattr__(name, value)
-
-  def set(self, d: dict) -> AttrDict:
-    if not d:
-      return self
-    return AttrDict({**self, **d})
-
-  def get_at(self: object, *attrs: str) -> object:
-    obj = self
-    for attr in attrs:
-      obj = getattr(obj, attr, None)
-    return obj
 
 class ContextVar(Generic[T]):
   def __init__(self, value: T):

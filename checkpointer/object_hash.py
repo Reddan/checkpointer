@@ -5,31 +5,34 @@ import io
 import re
 import sys
 import tokenize
+from collections import OrderedDict
 from collections.abc import Iterable
 from contextlib import nullcontext, suppress
 from decimal import Decimal
 from io import StringIO
 from itertools import chain
 from pickle import HIGHEST_PROTOCOL as PICKLE_PROTOCOL
-from types import BuiltinFunctionType, FunctionType, GeneratorType, MethodType, ModuleType, UnionType
+from types import BuiltinFunctionType, FunctionType, GeneratorType, MappingProxyType, MethodType, ModuleType, UnionType
 from typing import Callable, Self, TypeVar
 from .utils import ContextVar
 
 np, torch = None, None
 
-with suppress(Exception):
-  import numpy as np
-with suppress(Exception):
-  import torch
-
 class _Never:
   def __getattribute__(self, _: str):
     pass
 
+with suppress(Exception):
+  import numpy as np
+with suppress(Exception):
+  import torch
 if sys.version_info >= (3, 12):
   from typing import TypeAliasType
 else:
   TypeAliasType = _Never
+
+flatten = chain.from_iterable
+nc = nullcontext()
 
 def encode_type(t: type | FunctionType) -> str:
   return f"{t.__module__}:{t.__qualname__}"
@@ -77,7 +80,7 @@ class ObjectHash:
     return self.write_bytes(":".join(map(str, args)).encode())
 
   def update(self, *objs: object, iter: Iterable[object] = (), tolerable: bool | None=None, header: str | None = None) -> Self:
-    with nullcontext() if tolerable is None else self.tolerable.set(tolerable):
+    with nc if tolerable is None else self.tolerable.set(tolerable):
       for obj in chain(objs, iter):
         if header is not None:
           self.write_bytes(header.encode())
@@ -105,11 +108,11 @@ class ObjectHash:
 
       case set() | frozenset():
         try:
-          items = sorted(obj)
           header = "set"
+          items = sorted(obj)
         except:
-          items = sorted(map(self.nested_hash, obj))
           header = "set-unsortable"
+          items = sorted(map(self.nested_hash, obj))
         self.header(header, encode_type_of(obj), len(obj)).update(iter=items)
 
       case TypeVar():
@@ -170,14 +173,16 @@ class ObjectHash:
           match obj:
             case list() | tuple():
               self.header("list", encode_type_of(obj), len(obj)).update(iter=obj)
-            case dict():
-              try:
-                items = sorted(obj.items())
-                header = "dict"
-              except:
-                items = sorted((self.nested_hash(key), val) for key, val in obj.items())
-                header = "dict-unsortable"
-              self.header(header, encode_type_of(obj), len(obj)).update(iter=chain.from_iterable(items))
+            case dict() | MappingProxyType():
+              header = "dict"
+              items = obj.items()
+              if not isinstance(obj, OrderedDict):
+                try:
+                  items = sorted(items)
+                except:
+                  header = "dict-unsortable"
+                  items = sorted((self.nested_hash(key), val) for key, val in items)
+              self.header(header, encode_type_of(obj), len(obj)).update(iter=flatten(items))
             case _:
               self._update_object(obj)
         finally:

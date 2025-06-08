@@ -7,7 +7,7 @@ from .. import get_function_hash, storages, utils
 from ..object_hash import ObjectHash
 from ..storages import pickle_storage
 from ..storages.memory_storage import MemoryStorage
-from ..utils import AttrDict
+from ..utils import get_at
 from . import Storage, memory_storage
 from .pickle_storage import PickleStorage
 
@@ -26,13 +26,13 @@ def test_import_mappings():
     "ObjectHash": ("checkpointer.object_hash", "ObjectHash"),
     "pickle_storage": ("checkpointer.storages", "pickle_storage"),
     "MemoryStorage": ("checkpointer.storages.memory_storage", "MemoryStorage"),
-    "AttrDict": ("checkpointer.utils", "AttrDict"),
+    "get_at": ("checkpointer.utils", "get_at"),
     "Storage": ("checkpointer.storages", "Storage"),
     "memory_storage": ("checkpointer.storages", "memory_storage"),
     "PickleStorage": ("checkpointer.storages.pickle_storage", "PickleStorage")
   }
   for name, (mod_name, attr_name) in import_mappings.items():
-    origin = AttrDict.get_at(self_module, *mod_name.split("."))
+    origin = get_at(self_module, *mod_name.split("."))
     target_module = sys.modules[mod_name]
     if not attr_name:
       assert origin is target_module
