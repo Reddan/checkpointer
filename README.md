@@ -1,6 +1,6 @@
 # checkpointer · [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Reddan/checkpointer/blob/master/LICENSE) [![pypi](https://img.shields.io/pypi/v/checkpointer)](https://pypi.org/project/checkpointer/) [![pypi](https://img.shields.io/pypi/pyversions/checkpointer)](https://pypi.org/project/checkpointer/)
 
-`checkpointer` is a Python library offering a decorator-based API for memoizing (caching) function results with code-aware cache invalidation. It works with sync and async functions, supports multiple storage backends, and refreshes caches automatically when your code or dependencies change - helping you maintain correctness, speed up execution, and smooth out your workflows by skipping redundant, costly operations.
+`checkpointer` is a Python library offering a decorator-based API for memoizing (caching) function results with code-aware cache invalidation. It works with sync and async functions, supports multiple storage backends, and invalidates caches automatically when your code or dependencies change - helping you maintain correctness, speed up execution, and smooth out your workflows by skipping redundant, costly operations.
 
 ## 📦 Installation
 
@@ -26,41 +26,51 @@ result = expensive_function(4)  # Loads from the cache
 
 ## 🧠 How It Works
 
-When a `@checkpoint`-decorated function is called, `checkpointer` computes a unique identifier for the call. This identifier derives from the function's source code, its dependencies, captured variables, and the arguments passed.
+When you decorate a function with `@checkpoint` and call it, `checkpointer` computes a unique identifier that represents that specific call. This identifier is based on:
 
-It then tries to retrieve a cached result using this identifier. If a valid cached result is found, it's returned immediately. Otherwise, the original function executes, its result is stored, and then returned.
+* The function's source code and all its user-defined dependencies,
+* Global variables used by the function (if capturing is enabled or explicitly annotated),
+* The actual arguments passed to the function.
 
-### 🚨 What Triggers Cache Invalidation?
+`checkpointer` then looks up this identifier in its cache. If a valid cached result exists, it returns that immediately. Otherwise, it runs the original function, stores the result, and returns it.
 
-`checkpointer` maintains cache correctness using two types of hashes:
+`checkpointer` is designed to be flexible through features like:
 
-#### 1. Function Identity Hash (One-Time per Function)
+* **Support for decorated methods**, correctly caching results bound to instances.
+* **Support for decorated async functions**, compatible with any async runtime.
+* **Robust hashing**, covering complex Python objects and large **NumPy**/**PyTorch** arrays via its internal `ObjectHash`.
+* **Targeted hashing**, allowing you to optimize how arguments and captured variables are hashed.
+* **Multi-layered caching**, letting you stack decorators for layered caching strategies without losing cache consistency.
+
+### 🚨 What Causes Cache Invalidation?
+
+To ensure cache correctness, `checkpointer` tracks two types of hashes:
+
+#### 1. Function Identity Hash (Computed Once Per Function)
 
 This hash represents the decorated function itself and is computed once (usually on first invocation). It covers:
 
-* **Decorated Function's Code:**\
-    The function's logic and signature (excluding parameter type annotations) are hashed. Formatting changes like whitespace, newlines, comments, or trailing commas do **not** cause invalidation.
+* **Function Code and Signature:**\
+    The actual logic and parameters of the function are hashed - but *not* parameter type annotations or formatting details like whitespace, newlines, comments, or trailing commas, which do **not** trigger invalidation.
 
 * **Dependencies:**\
-    All user-defined functions and methods the function calls or uses are included recursively. Dependencies are detected by:
-    * Inspecting the function's global scope for referenced functions/objects.
-    * Inferring from argument type annotations.
+    All user-defined functions and methods that the decorated function calls or relies on, including indirect dependencies, are included recursively. Dependencies are identified by:
+    * Inspecting the function's global scope for referenced functions and objects.
+    * Inferring from the function's argument type annotations.
     * Analyzing object constructions and method calls to identify classes and methods used.
 
-* **Top-Level Module Code:**\
-    Changes unrelated to the function or its dependencies in the module do **not** trigger invalidation.
+* **Exclusions:**\
+    Changes elsewhere in the module unrelated to the function or its dependencies do **not** cause invalidation.
 
 #### 2. Call Hash (Computed on Every Function Call)
 
-Each function call's cache key (the **call hash**) combines:
+Every function call produces a call hash, combining:
 
 * **Passed Arguments:**\
     Includes positional and keyword arguments, combined with default values. Changing defaults alone doesn't necessarily trigger invalidation unless it affects actual call values.
 
 * **Captured Global Variables:**\
-    When `capture=True` or explicit capture annotations are used, `checkpointer` hashes global variables referenced by the function:
-    * `CaptureMe` variables are hashed on every call, so changes trigger invalidation.
-    * `CaptureMeOnce` variables are hashed once per session for performance optimization.
+    When `capture=True` or explicit capture annotations are used, `checkpointer` includes referenced global variables in the call hash. Variables annotated with `CaptureMe` are hashed on every call, causing immediate cache invalidation if they change. Variables annotated with `CaptureMeOnce` are hashed only once per Python session, improving performance by avoiding repeated hashing.
 
 * **Custom Argument Hashing:**\
     Using `HashBy` annotations, arguments or captured variables can be transformed before hashing (e.g., sorting lists to ignore order), allowing more precise or efficient call hashes.
@@ -214,31 +224,4 @@ class MyCustomStorage(Storage):
 @checkpoint(storage=MyCustomStorage)
 def custom_cached_function(x: int):
     return x ** 2
-```
-
-## ⚡ Async Support
-
-`checkpointer` works with Python's `asyncio` and other async runtimes.
-
-```python
-import asyncio
-from checkpointer import checkpoint
-
-@checkpoint
-async def async_compute_sum(a: int, b: int) -> int:
-    print(f"Asynchronously computing {a} + {b}...")
-    await asyncio.sleep(1)
-    return a + b
-
-async def main():
-    result1 = await async_compute_sum(3, 7)
-    print(f"Result 1: {result1}")
-
-    result2 = await async_compute_sum(3, 7)
-    print(f"Result 2: {result2}")
-
-    result3 = async_compute_sum.get(3, 7)
-    print(f"Result 3 (from cache): {result3}")
-
-asyncio.run(main())
 ```

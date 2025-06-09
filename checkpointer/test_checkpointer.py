@@ -52,29 +52,27 @@ def run_before_and_after_tests(tmpdir):
 
 def test_same_fn_hash():
   @checkpoint
-  def foo(): square(2)
+  def foo(a: int, /, b: int, c: int = 0, *args: int, d: int, e: int = 0, **kwargs: int):
+    """Documentation for foo"""
+    return [
+      a, b, c, args, #
+      d, e, kwargs,  #
+    ]
+
   @checkpoint
-  def bar(): square(2)
+  def bar(a, b, c, *args, d, e, **kwargs):
+    return [a, b, c, args, d, e, kwargs]
 
   assert foo.ident.fn_hash == bar.ident.fn_hash
 
 def test_cache_invalidation():
-  def square_1(x: int):
-    return x * x + 0
-
-  def square_2(x: int):
-    return x * x + 0
-
-  def square_3(x: int):
-    return 0 + x * x
-
+  def square_1(x: int): return x * x + 0
+  def square_2(x: int): return x * x + 0
+  def square_3(x: int): return 0 + x * x
   @checkpoint
-  def helper(x: int):
-    return square(x)
-
+  def helper(x: int): square(x)
   @checkpoint
-  def fn(x: int):
-    return helper(x)
+  def fn(x: int): helper(x)
 
   square = square_1
   init_fn_hash = fn.ident.fn_hash
@@ -85,16 +83,13 @@ def test_cache_invalidation():
 
 def test_inner_capture_resolve_propagates():
   @checkpoint
-  def fst():
-    return captured_dict_once
+  def fst(): return captured_dict_once
 
   fst_capts = fst.ident.capturables
   captured_dict_once.a += 1
 
   @checkpoint
-  def snd():
-    _ = captured_dict_once
-    return fst()
+  def snd(): return captured_dict_once | fst()
 
   snd_capts = snd.ident.capturables
   assert fst_capts == snd_capts
@@ -145,21 +140,19 @@ def test_layered_caching():
   assert expensive_function.get(4) == 16
   assert expensive_function.fn.get(4) == 16
 
-def test_recursive_caching1():
+def test_recursive_caching():
   @checkpoint
-  def fib(n: int) -> int:
-    return fib(n - 1) + fib(n - 2) if n > 1 else n
+  def fib1(n: int) -> int:
+    return fib1(n - 1) + fib1(n - 2) if n > 1 else n
 
-  assert (fib(10), fib.get(10), fib.get(5)) == (55, 55, 5)
-
-def test_recursive_caching2():
   @checkpoint
-  def fib(n: int) -> int:
-    return fib.fn(n - 1) + fib.fn(n - 2) if n > 1 else n
+  def fib2(n: int) -> int:
+    return fib2.fn(n - 1) + fib2.fn(n - 2) if n > 1 else n
 
-  assert (fib(10), fib.get(10)) == (55, 55)
+  assert (fib1(10), fib1.get(10), fib1.get(5)) == (55, 55, 5)
+  assert (fib2(10), fib2.get(10)) == (55, 55)
   with pytest.raises(CheckpointError):
-    fib.get(5)
+    fib2.get(5)
 
 @pytest.mark.asyncio
 async def test_async_caching():
@@ -173,18 +166,19 @@ async def test_async_caching():
 
 def test_force_recalculation():
   @checkpoint
-  def square(x: int) -> int:
-    return x ** 2
+  def square(x: int) -> int: return x ** 2 + offset
 
+  offset = 0
   assert square(5) == 25
-  square.rerun(5)
-  assert square.get(5) == 25
+  offset = 10
+  assert square.rerun(5) == 35
+  offset = 20
+  assert square(5) == 35
 
 def test_multi_layer_decorator():
   @checkpoint(storage="memory")
   @checkpoint(storage="pickle")
-  def add(a: int, b: int) -> int:
-    return a + b
+  def add(a: int, b: int) -> int: return a + b
 
   assert add(2, 3) == 5
   assert add.get(2, 3) == 5
@@ -192,16 +186,11 @@ def test_multi_layer_decorator():
 
 def test_capture():
   @checkpoint
-  def test_once():
-    return captured_dict_once
-
+  def test_once(): return captured_dict_once
   @checkpoint
-  def test_whole():
-    return captured_dict
-
+  def test_whole(): return captured_dict
   @checkpoint(capture=True)
-  def test_a():
-    return captured_dict.a + 1
+  def test_a(): return captured_dict.a + 1
 
   init_hash_a = test_a.get_call_hash()
   init_hash_whole = test_whole.get_call_hash()
@@ -250,19 +239,12 @@ def test_capture_hashby():
   assert get_captured_objs(fn) == {"nums": sorted(nums)}
 
 def test_depends():
-  def multiply_wrapper(a: int, b: int) -> int:
-    return multiply(a, b)
-
-  def helper(a: int, b: int) -> int:
-    return multiply_wrapper(a + 1, b + 1)
-
+  def multiply_wrapper(a: int, b: int): return multiply(a, b)
+  def helper(a: int, b: int): return multiply_wrapper(a + 1, b + 1)
   @checkpoint
-  def test_a(a: int, b: int) -> int:
-    return helper(a, b)
-
+  def test_a(a: int, b: int): return helper(a, b)
   @checkpoint
-  def test_b(a: int, b: int) -> int:
-    return test_a(a, b) + multiply_wrapper(a, b)
+  def test_b(a: int, b: int): return test_a(a, b) + multiply_wrapper(a, b)
 
   assert get_depends(test_a) == {test_a.fn, helper, multiply_wrapper, multiply}
   assert get_depends(test_b) == {test_b.fn, test_a, multiply_wrapper, multiply}
@@ -270,15 +252,13 @@ def test_depends():
 def test_lazy_init():
   for ident_early in [True, False]:
     @checkpoint
-    def fn1(x: object) -> object:
-      return fn2(x)
+    def fn1(x: object): return fn2(x)
 
     if ident_early:
       assert get_depends(fn1) == {fn1.fn}
 
     @checkpoint
-    def fn2(x: object) -> object:
-      return fn1(x)
+    def fn2(x: object): return fn1(x)
 
     if ident_early:
       assert get_depends(fn1) == {fn1.fn}
@@ -294,3 +274,26 @@ def test_repr():
   assert str(fn) == "<CachedFunction fn - uninitialized>"
   fn()
   assert str(fn) == f"<CachedFunction fn {fn.ident.fn_hash[:6]}>"
+
+def test_ignore_checkpoint_decorator():
+  def included_decorator(fn: Callable) -> Callable:
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+      return fn(*args, **kwargs)
+    return wrapper
+
+  @checkpoint
+  def fn_a(): ...
+
+  @checkpoint
+  @included_decorator
+  def fn_b(): ...
+
+  @checkpoint
+  @checkpoint
+  @included_decorator
+  @Checkpointer()
+  def fn_c(): ...
+
+  assert fn_a.ident.fn_hash != fn_b.ident.fn_hash
+  assert fn_b.ident.fn_hash == fn_c.ident.fn_hash
