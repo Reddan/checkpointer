@@ -5,12 +5,15 @@ import io
 import re
 import sys
 import tokenize
+import sysconfig
 from collections import OrderedDict
 from collections.abc import Iterable
 from contextlib import nullcontext, suppress
 from decimal import Decimal
 from io import StringIO
+from inspect import getfile
 from itertools import chain
+from pathlib import Path
 from pickle import HIGHEST_PROTOCOL as PICKLE_PROTOCOL
 from types import BuiltinFunctionType, FunctionType, GeneratorType, MappingProxyType, MethodType, ModuleType, UnionType
 from typing import Callable, Self, TypeVar
@@ -33,6 +36,7 @@ else:
 
 flatten = chain.from_iterable
 nc = nullcontext()
+stdlib = Path(sysconfig.get_paths()["stdlib"]).resolve()
 
 def encode_type(t: type | FunctionType) -> str:
   return f"{t.__module__}:{t.__qualname__}"
@@ -128,7 +132,11 @@ class ObjectHash:
         self.header("builtin", obj.__qualname__)
 
       case FunctionType():
-        self.header("function", encode_type(obj)).update(get_fn_body(obj), obj.__defaults__, obj.__kwdefaults__, obj.__annotations__)
+        fn_file = Path(getfile(obj)).resolve()
+        if fn_file.is_relative_to(stdlib):
+          self.header("function-std", obj.__qualname__)
+        else:
+          self.header("function", encode_type(obj)).update(get_fn_body(obj), obj.__defaults__, obj.__kwdefaults__, obj.__annotations__)
 
       case MethodType():
         self.header("method").update(obj.__func__, obj.__self__.__class__)
