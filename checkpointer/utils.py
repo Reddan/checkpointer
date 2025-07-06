@@ -1,13 +1,14 @@
 from __future__ import annotations
 import inspect
 from contextlib import contextmanager, suppress
-from itertools import islice
+from itertools import chain, islice
 from pathlib import Path
 from types import FunctionType, MethodType, ModuleType
 from typing import Callable, Generic, Iterable, Self, Type, TypeGuard
 from .types import T
 
 cwd = Path.cwd().resolve()
+flatten = chain.from_iterable
 
 def is_class(obj) -> TypeGuard[Type]:
   return isinstance(obj, type)
@@ -22,7 +23,7 @@ def is_user_fn(obj) -> TypeGuard[Callable]:
   return isinstance(obj, (FunctionType, MethodType)) and is_user_file(get_file(obj))
 
 def get_cell_contents(fn: Callable) -> Iterable[tuple[str, object]]:
-  for key, cell in zip(fn.__code__.co_freevars, fn.__closure__ or []):
+  for key, cell in zip(fn.__code__.co_freevars, fn.__closure__ or ()):
     with suppress(ValueError):
       yield (key, cell.cell_contents)
 

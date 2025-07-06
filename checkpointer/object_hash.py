@@ -17,7 +17,7 @@ from pathlib import Path
 from pickle import HIGHEST_PROTOCOL as PICKLE_PROTOCOL
 from types import BuiltinFunctionType, FunctionType, GeneratorType, MappingProxyType, MethodType, ModuleType, UnionType
 from typing import Callable, Self, TypeVar
-from .utils import ContextVar
+from .utils import ContextVar, flatten
 
 np, torch = None, None
 
@@ -34,7 +34,6 @@ if sys.version_info >= (3, 12):
 else:
   TypeAliasType = _Never
 
-flatten = chain.from_iterable
 nc = nullcontext()
 stdlib = Path(sysconfig.get_paths()["stdlib"]).resolve()
 

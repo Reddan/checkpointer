@@ -97,7 +97,7 @@ Once a function is decorated with `@checkpoint`, you can interact with its cachi
 * **`expensive_function.delete(...)`**:\
     Remove the cached entry for given arguments.
 
-* **`expensive_function.reinit(recursive: bool = False)`**:\
+* **`expensive_function.reinit(recursive: bool = True)`**:\
     Recalculate the function identity hash and recapture `CaptureMeOnce` variables, updating the cached function state within the same Python session.
 
 ## ⚙️ Configuration & Customization
@@ -110,9 +110,6 @@ The `@checkpoint` decorator accepts the following parameters:
 * **`directory`** (Type: `str` or `pathlib.Path` or `None`, Default: `~/.cache/checkpoints`)\
     Base directory for disk-based checkpoints (only for `"pickle"` storage).
 
-* **`when`** (Type: `bool`, Default: `True`)\
-    Enable or disable checkpointing dynamically, useful for environment-based toggling.
-
 * **`capture`** (Type: `bool`, Default: `False`)\
     If `True`, includes global variables referenced by the function in call hashes (except those excluded via `NoHash`).
 
@@ -121,6 +118,9 @@ The `@checkpoint` decorator accepts the following parameters:
 
 * **`fn_hash_from`** (Type: `Any`, Default: `None`)\
     Override the computed function identity hash with any hashable object you provide (e.g., version strings, config IDs). This gives you explicit control over the function's version and when its cache should be invalidated.
+
+* **`when`** (Type: `bool`, Default: `True`)\
+    Enable or disable checkpointing dynamically, useful for environment-based toggling.
 
 * **`verbosity`** (Type: `int` (`0`, `1`, or `2`), Default: `1`)\
     Controls the level of logging output from `checkpointer`.

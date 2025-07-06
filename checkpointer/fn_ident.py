@@ -86,14 +86,14 @@ def extract_scope_values(code: CodeType, scope_vars: dict) -> Iterable[tuple[Att
       next_scope_vars = {**scope_vars, "LOAD_FAST": {}, "LOAD_DEREF": next_deref}
       yield from extract_scope_values(const, next_scope_vars)
 
-def resolve_class_annotations(anno: object) -> Type | None:
+def class_from_annotation(anno: object) -> Type | None:
   if anno in (None, Annotated):
     return None
-  elif is_class(anno):
+  if is_class(anno):
     return anno
-  elif get_origin(anno) is Annotated:
-    return resolve_class_annotations(next(iter(get_args(anno)), None))
-  return resolve_class_annotations(get_origin(anno))
+  if get_origin(anno) is Annotated:
+    return class_from_annotation(next(iter(get_args(anno)), None))
+  return class_from_annotation(get_origin(anno))
 
 def get_self_value(fn: Callable) -> Type | object | None:
   if isinstance(fn, MethodType):
@@ -107,9 +107,9 @@ def get_capturables(fn: Callable, capture: bool, captured_vars: dict[AttrPath, o
   module = getmodule(fn)
   if not module or not is_user_fn(fn):
     return
-  for (instruct, *attr_path), obj in captured_vars.items():
+  for (instruct_type, *attr_path), obj in captured_vars.items():
     attr_path = AttrPath(attr_path)
-    if instruct == "LOAD_GLOBAL" and not callable(obj) and not isinstance(obj, ModuleType):
+    if instruct_type == "LOAD_GLOBAL" and not callable(obj) and not isinstance(obj, ModuleType):
       anno = resolve_annotation(module, ".".join(attr_path))
       if capture or is_capture_me(anno) or is_capture_me_once(anno):
         hash_by = hash_by_from_annotation(anno)
@@ -122,7 +122,7 @@ def get_fn_captures(fn: Callable, capture: bool) -> tuple[list[Callable], list[C
     for param in signature(fn).parameters.values()
     if param.annotation is not Parameter.empty
     if param.kind not in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD)
-    if (class_anno := resolve_class_annotations(param.annotation))
+    if (class_anno := class_from_annotation(param.annotation))
   }
   if self_obj := get_self_value(fn):
     scope_vars_signature["self"] = self_obj
@@ -152,10 +152,10 @@ def get_depend_fns(fn: Callable, capture: bool, capturable_by_fn: CapturableByFn
 def get_fn_ident(fn: Callable, capture: bool) -> RawFunctionIdent:
   from .checkpoint import CachedFunction
   capturable_by_fn = get_depend_fns(fn, capture)
-  capturables = {capt for capts in capturable_by_fn.values() for capt in capts}
   depends = capturable_by_fn.keys()
   depends = distinct(fn.__func__ if isinstance(fn, MethodType) else fn for fn in depends)
   depend_callables = [fn for fn in depends if not isinstance(fn, CachedFunction)]
-  assert fn == depend_callables[0]
   fn_hash = str(ObjectHash(iter=map(get_fn_aststr, depend_callables)))
+  capturables = {capt for capts in capturable_by_fn.values() for capt in capts}
+  assert fn == depend_callables[0]
   return RawFunctionIdent(fn_hash, depends, capturables)

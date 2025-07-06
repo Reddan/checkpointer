@@ -3,17 +3,17 @@ import re
 from datetime import datetime
 from functools import cached_property, update_wrapper
 from inspect import Parameter, iscoroutine, signature, unwrap
-from itertools import chain
 from pathlib import Path
 from typing import (
   Callable, Concatenate, Coroutine, Generic, Iterable,
-  Literal, Self, Type, TypedDict, Unpack, cast, overload,
+  Literal, Self, Type, TypedDict, Unpack, overload,
 )
 from .fn_ident import Capturable, RawFunctionIdent, get_fn_ident
 from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
 from .storages import STORAGE_MAP, Storage, StorageType
 from .types import AwaitableValue, C, Coro, Fn, P, R, hash_by_from_annotation
+from .utils import flatten
 
 DEFAULT_DIR = Path.home() / ".cache/checkpoints"
 
@@ -129,7 +129,7 @@ class CachedFunction(Generic[Fn]):
   def __init__(self, checkpointer: Checkpointer, fn: Fn):
     store_format = checkpointer.storage
     Storage = STORAGE_MAP[store_format] if isinstance(store_format, str) else store_format
-    update_wrapper(cast(Callable, self), unwrap(fn))
+    update_wrapper(self, unwrap(fn))  # type: ignore
     self.ident = FunctionIdent(self, checkpointer, fn)
     self.storage = Storage(self)
     self.bound = ()
@@ -152,13 +152,13 @@ class CachedFunction(Generic[Fn]):
 
   @property
   def fn(self) -> Fn:
-    return cast(Fn, self.ident.fn)
+    return self.ident.fn  # type: ignore
 
   @property
   def cleanup(self):
     return self.storage.cleanup
 
-  def reinit(self, recursive=False) -> CachedFunction[Fn]:
+  def reinit(self, recursive=True) -> CachedFunction[Fn]:
     depend_idents = list(self.ident.deep_idents()) if recursive else [self.ident]
     for ident in depend_idents: ident.reset()
     for ident in depend_idents: ident.fn_hash
@@ -178,12 +178,10 @@ class CachedFunction(Generic[Fn]):
       elif key == b"**":
         for key in kw.keys() - ident.arg_names:
           named_args[key] = hash_by(named_args[key])
-    named_args_iter = chain.from_iterable(sorted(named_args.items()))
-    captured = chain.from_iterable(capturable.capture() for capturable in ident.capturables)
     call_hash = ObjectHash(digest_size=16) \
-      .update(iter=named_args_iter, header="NAMED") \
-      .update(iter=pos_args, header="POS") \
-      .update(iter=captured, header="CAPTURED")
+      .update(header="NAMED", iter=flatten(sorted(named_args.items()))) \
+      .update(header="POS", iter=pos_args) \
+      .update(header="CAPTURED", iter=flatten(c.capture() for c in ident.capturables))
     return str(call_hash)
 
   def get_call_hash(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> str:

@@ -1,9 +1,10 @@
 import asyncio
 import sys
 import pytest
+from functools import wraps
 from pathlib import Path
 from typing import Annotated, get_origin
-from checkpointer import CachedFunction, Callable, CaptureMe, CaptureMeOnce, CheckpointError, HashBy, checkpoint
+from checkpointer import CachedFunction, Callable, CaptureMe, CaptureMeOnce, Checkpointer, CheckpointError, HashBy, checkpoint
 from .import_mappings import resolve_annotation
 from .print_checkpoint import COLOR_MAP
 from .utils import AttrDict
@@ -50,20 +51,27 @@ def run_before_and_after_tests(tmpdir):
   checkpoint.directory = Path(tmpdir)
   yield
 
-def test_same_fn_hash():
+def test_same_and_different_fn_hash():
   @checkpoint
-  def foo(a: int, /, b: int, c: int = 0, *args: int, d: int, e: int = 0, **kwargs: int):
+  def foo1(a: int, /, b: int, c: int = 0, *args: int, d: int, e: int = 0, **kwargs: int):
     """Documentation for foo"""
-    return [
-      a, b, c, args, #
-      d, e, kwargs,  #
-    ]
+
+    return ([
+      a, b, c,  #
+      args, d, e,
+      "",
+    ])
 
   @checkpoint
-  def bar(a, b, c, *args, d, e, **kwargs):
-    return [a, b, c, args, d, e, kwargs]
+  def foo2(a, b, c, *args, d, e, **kwargs): return [a, b, c, args, d, e, '']
+  @checkpoint
+  def bar(a, b, c, *args, d, e, **kwargs): return [a, b, c, args, d, '']
+  @checkpoint
+  def baz(a, b, c, *args, d, e, **kw): return [a, b, c, args, d, e, '']
 
-  assert foo.ident.fn_hash == bar.ident.fn_hash
+  assert foo1.ident.fn_hash == foo2.ident.fn_hash
+  assert foo2.ident.fn_hash != bar.ident.fn_hash
+  assert foo2.ident.fn_hash != baz.ident.fn_hash
 
 def test_cache_invalidation():
   def square_1(x: int): return x * x + 0
@@ -77,9 +85,9 @@ def test_cache_invalidation():
   square = square_1
   init_fn_hash = fn.ident.fn_hash
   square = square_2
-  assert init_fn_hash == fn.reinit(recursive=True).ident.fn_hash
+  assert init_fn_hash == fn.reinit().ident.fn_hash
   square = square_3
-  assert init_fn_hash != fn.reinit(recursive=True).ident.fn_hash
+  assert init_fn_hash != fn.reinit().ident.fn_hash
 
 def test_inner_capture_resolve_propagates():
   @checkpoint
@@ -133,8 +141,7 @@ def test_layered_caching():
 
   @checkpoint(storage="memory")
   @dev_checkpoint
-  def expensive_function(x: int):
-    return x ** 2
+  def expensive_function(x: int): return x ** 2
 
   assert expensive_function(4) == 16
   assert expensive_function.get(4) == 16

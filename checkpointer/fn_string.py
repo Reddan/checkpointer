@@ -15,7 +15,7 @@ def get_decorator_path(node: ast.AST) -> tuple[str, ...]:
   else:
     return ()
 
-def is_empty_expression(node: ast.AST) -> bool:
+def is_lone_expression(node: ast.AST) -> bool:
   # Filter out docstrings
   return isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
 
@@ -26,7 +26,8 @@ class CleanFunctionTransform(ast.NodeTransformer):
 
   def is_checkpointer(self, node: ast.AST) -> bool:
     from .checkpoint import Checkpointer
-    return isinstance(get_at(self.fn_globals, *get_decorator_path(node)), Checkpointer)
+    decorator = get_at(self.fn_globals, *get_decorator_path(node))
+    return isinstance(decorator, Checkpointer) or decorator is Checkpointer
 
   def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef):
     fn_type = type(node).__name__
@@ -45,7 +46,7 @@ class CleanFunctionTransform(ast.NodeTransformer):
     return ast.List([
       ast.Constant(header),
       ast.List([child for child in node.decorator_list if not self.is_checkpointer(child)], ast.Load()),
-      ast.List([self.visit(child) for child in node.body if not is_empty_expression(child)], ast.Load()),
+      ast.List([self.visit(child) for child in node.body if not is_lone_expression(child)], ast.Load()),
     ], ast.Load())
 
   def visit_AsyncFunctionDef(self, node):
@@ -66,10 +67,7 @@ def get_fn_aststr(fn: Callable) -> str:
   if fn.__name__ != "<lambda>":
     tree = CleanFunctionTransform(fn.__globals__).visit(tree)
   else:
-    for node in ast.walk(tree):
-      if isinstance(node, ast.Lambda):
-        tree = node
-        break
+    tree = ast.List([node for node in ast.walk(tree) if isinstance(node, ast.Lambda)], ast.Load())
 
   if sys.version_info >= (3, 13):
     return ast.dump(tree, annotate_fields=False, show_empty=True)
