@@ -1,5 +1,6 @@
 import gc
 import tempfile
+from datetime import timedelta
 from typing import Callable
 from .checkpoint import CachedFunction, Checkpointer, CheckpointError, FunctionIdent
 from .object_hash import ObjectHash

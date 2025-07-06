@@ -40,10 +40,10 @@ class PickleStorage(Storage):
       for path in old_dirs:
         shutil.rmtree(path)
       print(f"Removed {len(old_dirs)} invalidated directories for {self.cached_fn.__qualname__}")
-    if expired and self.checkpointer.should_expire:
+    if expired and self.checkpointer.expiry:
       count = 0
       for pkl_path in fn_path.glob("**/*.pkl"):
-        if self.checkpointer.should_expire(filedate(pkl_path)):
+        if self.expired_dt(filedate(pkl_path)):
           count += 1
           pkl_path.unlink(missing_ok=True)
       print(f"Removed {count} expired checkpoints for {self.cached_fn.__qualname__}")

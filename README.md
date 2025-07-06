@@ -113,7 +113,7 @@ The `@checkpoint` decorator accepts the following parameters:
 * **`capture`** (Type: `bool`, Default: `False`)\
     If `True`, includes global variables referenced by the function in call hashes (except those excluded via `NoHash`).
 
-* **`should_expire`** (Type: `Callable[[datetime.datetime], bool]`, Default: `None`)\
+* **`expiry`** (Type: `Callable[[datetime.datetime], bool]` or `datetime.timedelta`, Default: `None`)\
     A custom callable that receives the `datetime` timestamp of a cached result. It should return `True` if the cached result is considered expired and needs recomputation, or `False` otherwise.
 
 * **`fn_hash_from`** (Type: `Any`, Default: `None`)\

@@ -31,7 +31,7 @@ class MemoryStorage(Storage):
       if key.parent == curr_key.parent:
         if invalidated and key != curr_key:
           del item_map[key]
-        elif expired and self.checkpointer.should_expire:
+        elif expired and self.checkpointer.expiry:
           for call_hash, (date, _) in list(calldict.items()):
-            if self.checkpointer.should_expire(date):
+            if self.expired_dt(date):
               del calldict[call_hash]

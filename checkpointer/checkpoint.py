@@ -1,6 +1,6 @@
 from __future__ import annotations
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import cached_property, update_wrapper
 from inspect import Parameter, iscoroutine, signature, unwrap
 from pathlib import Path
@@ -25,7 +25,7 @@ class CheckpointerOpts(TypedDict, total=False):
   directory: Path | str | None
   when: bool
   verbosity: Literal[0, 1, 2]
-  should_expire: Callable[[datetime], bool] | None
+  expiry: Callable[[datetime], bool] | timedelta | None
   capture: bool
   fn_hash_from: object
 
@@ -35,7 +35,7 @@ class Checkpointer:
     self.directory = Path(opts.get("directory", DEFAULT_DIR) or ".")
     self.when = opts.get("when", True)
     self.verbosity = opts.get("verbosity", 1)
-    self.should_expire = opts.get("should_expire")
+    self.expiry = opts.get("expiry")
     self.capture = opts.get("capture", False)
     self.fn_hash_from = opts.get("fn_hash_from")
 
@@ -199,9 +199,7 @@ class CachedFunction(Generic[Fn]):
 
     call_hash = self._get_call_hash(args, kw)
     call_id = f"{storage.fn_id()}/{call_hash}"
-    refresh = rerun \
-      or not storage.exists(call_hash) \
-      or (params.should_expire and params.should_expire(storage.checkpoint_date(call_hash)))
+    refresh = rerun or not storage.exists(call_hash) or storage.expired(call_hash)
 
     if refresh:
       print_checkpoint(params.verbosity >= 1, "MEMORIZING", call_id, "blue")
