@@ -9,7 +9,7 @@ def filedate(path: Path) -> datetime:
 
 class PickleStorage(Storage):
   def get_path(self, call_hash: str):
-    return self.fn_dir() / f"{call_hash}.pkl"
+    return self.fn_dir() / f"{call_hash[:2]}/{call_hash[2:]}.pkl"
 
   def store(self, call_hash, data):
     path = self.get_path(call_hash)
