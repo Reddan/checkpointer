@@ -1,6 +1,6 @@
 [project]
 name = "checkpointer"
-version = "2.14.0"
+version = "2.14.1"
 requires-python = ">=3.11"
 dependencies = []
 authors = [

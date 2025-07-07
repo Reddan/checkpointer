@@ -112,3 +112,21 @@ class ContextVar(Generic[T]):
       yield
     finally:
       self.value = old
+
+def empty_dirs(path: Path) -> Iterable[Path]:
+  nonempty_count = 0
+  for child in path.iterdir():
+    nonempty_count += 1
+    if child.is_dir():
+      for grand_child in empty_dirs(child):
+        yield grand_child
+        nonempty_count -= child == grand_child
+  if nonempty_count == 0:
+    yield path
+
+def clear_directory(path: Path):
+  if path.is_dir():
+    for file in path.glob("**/.DS_Store"):
+      file.unlink()
+    for directory in empty_dirs(path):
+      directory.rmdir()

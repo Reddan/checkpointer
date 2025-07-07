@@ -2,6 +2,7 @@ import pickle
 import shutil
 from datetime import datetime
 from pathlib import Path
+from ..utils import clear_directory
 from .storage import Storage
 
 def filedate(path: Path) -> datetime:
@@ -35,7 +36,7 @@ class PickleStorage(Storage):
   def cleanup(self, invalidated=True, expired=True):
     version_path = self.fn_dir()
     fn_path = version_path.parent
-    if invalidated:
+    if invalidated and fn_path.exists():
       old_dirs = [path for path in fn_path.iterdir() if path.is_dir() and path != version_path]
       for path in old_dirs:
         shutil.rmtree(path)
@@ -47,3 +48,9 @@ class PickleStorage(Storage):
           count += 1
           pkl_path.unlink(missing_ok=True)
       print(f"Removed {count} expired checkpoints for {self.cached_fn.__qualname__}")
+    clear_directory(fn_path)
+
+  def clear(self):
+    fn_path = self.fn_dir().parent
+    if fn_path.exists():
+      shutil.rmtree(fn_path)

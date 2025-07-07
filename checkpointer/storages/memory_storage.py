@@ -35,3 +35,9 @@ class MemoryStorage(Storage):
           for call_hash, (date, _) in list(calldict.items()):
             if self.expired_dt(date):
               del calldict[call_hash]
+
+  def clear(self):
+    fn_path = self.fn_dir().parent
+    for key in list(item_map.keys()):
+      if key.parent == fn_path:
+        del item_map[key]
