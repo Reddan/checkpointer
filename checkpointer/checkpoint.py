@@ -242,6 +242,16 @@ class CachedFunction(Generic[Fn]):
       raise CheckpointError("Could not load checkpoint") from ex
 
   @overload
+  def get_or(self: Callable[P, Coro[R]], default: R, *args: P.args, **kw: P.kwargs) -> R: ...
+  @overload
+  def get_or(self: Callable[P, R], default: R, *args: P.args, **kw: P.kwargs) -> R: ...
+  def get_or(self, default, *args, **kw):
+    try:
+      return self.get(*args, **kw)  # type: ignore
+    except CheckpointError:
+      return default
+
+  @overload
   def set(self: Callable[P, Coro[R]], value: AwaitableValue[R], *args: P.args, **kw: P.kwargs): ...
   @overload
   def set(self: Callable[P, R], value: R, *args: P.args, **kw: P.kwargs): ...
