@@ -12,8 +12,8 @@ from .fn_ident import Capturable, RawFunctionIdent, get_fn_ident
 from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
 from .storages import STORAGE_MAP, Storage, StorageType
-from .types import AwaitableValue, C, Coro, Fn, P, R, hash_by_from_annotation
-from .utils import flatten
+from .types import AwaitableValue, C, Coro, Fn, P, R, T, hash_by_from_annotation
+from .utils import flatten, to_coroutine
 
 DEFAULT_DIR = Path.home() / ".cache/checkpoints"
 
@@ -211,6 +211,8 @@ class CachedFunction(Generic[Fn]):
     try:
       data = storage.load(call_hash)
       print_checkpoint(params.verbosity >= 2, "REMEMBERED", call_id, "green")
+      if isinstance(data, AwaitableValue):
+        return to_coroutine(data.value)  # type: ignore
       return data
     except (EOFError, FileNotFoundError):
       pass
@@ -242,9 +244,9 @@ class CachedFunction(Generic[Fn]):
       raise CheckpointError("Could not load checkpoint") from ex
 
   @overload
-  def get_or(self: Callable[P, Coro[R]], default: R, *args: P.args, **kw: P.kwargs) -> R: ...
+  def get_or(self: Callable[P, Coro[R]], default: T, *args: P.args, **kw: P.kwargs) -> R | T: ...
   @overload
-  def get_or(self: Callable[P, R], default: R, *args: P.args, **kw: P.kwargs) -> R: ...
+  def get_or(self: Callable[P, R], default: T, *args: P.args, **kw: P.kwargs) -> R | T: ...
   def get_or(self, default, *args, **kw):
     try:
       return self.get(*args, **kw)  # type: ignore

@@ -10,6 +10,9 @@ from .types import T
 cwd = Path.cwd().resolve()
 flatten = chain.from_iterable
 
+async def to_coroutine(value: T) -> T:
+  return value
+
 def is_class(obj) -> TypeGuard[Type]:
   return isinstance(obj, type)
 

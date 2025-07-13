@@ -1,12 +1,26 @@
 import pickle
 import shutil
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from ..utils import clear_directory
 from .storage import Storage
 
+try:
+  import polars as pl
+except:
+  pl = None
+
 def filedate(path: Path) -> datetime:
   return datetime.fromtimestamp(path.stat().st_mtime)
+
+class ExtendedPickler(pickle.Pickler):
+  def reducer_override(self, obj): # type: ignore
+    if pl and isinstance(obj, pl.DataFrame):
+      buffer = BytesIO()
+      obj.rechunk().write_parquet(buffer)
+      return pl.read_parquet, (buffer.getvalue(),)
+    return NotImplemented
 
 class PickleStorage(Storage):
   def get_path(self, call_hash: str):
@@ -16,7 +30,7 @@ class PickleStorage(Storage):
     path = self.get_path(call_hash)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as file:
-      pickle.dump(data, file, -1)
+      ExtendedPickler(file, -1).dump(data)
     return data
 
   def exists(self, call_hash):
