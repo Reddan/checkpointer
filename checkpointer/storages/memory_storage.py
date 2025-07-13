@@ -1,3 +1,4 @@
+import gc
 from typing import Any
 from pathlib import Path
 from datetime import datetime
@@ -41,3 +42,12 @@ class MemoryStorage(Storage):
     for key in list(item_map.keys()):
       if key.parent == fn_path:
         del item_map[key]
+
+def cleanup_memory_storage():
+  gc.collect()
+  memory_stores = [obj for obj in gc.get_objects() if isinstance(obj, MemoryStorage)]
+  storage_keys = {store.fn_dir() for store in memory_stores}
+  for key in item_map.keys() - storage_keys:
+    del item_map[key]
+  for store in memory_stores:
+    store.cleanup(invalidated=False)
