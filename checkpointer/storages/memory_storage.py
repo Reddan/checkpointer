@@ -1,12 +1,23 @@
+from __future__ import annotations
 import gc
-from typing import Any
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+from weakref import WeakSet
 from .storage import Storage
 
+if TYPE_CHECKING:
+  from ..checkpoint import CachedFunction
+
 item_map: dict[Path, dict[str, tuple[datetime, Any]]] = {}
+mem_stores: WeakSet[MemoryStorage] = WeakSet()
 
 class MemoryStorage(Storage):
+  def __init__(self, cached_fn: CachedFunction):
+    super().__init__(cached_fn)
+    self.cleanup()
+    mem_stores.add(self)
+
   def get_dict(self):
     return item_map.setdefault(self.fn_dir(), {})
 
@@ -45,9 +56,8 @@ class MemoryStorage(Storage):
 
 def cleanup_memory_storage():
   gc.collect()
-  memory_stores = [obj for obj in gc.get_objects() if isinstance(obj, MemoryStorage)]
-  storage_keys = {store.fn_dir() for store in memory_stores}
+  storage_keys = {store.fn_dir() for store in mem_stores}
   for key in item_map.keys() - storage_keys:
     del item_map[key]
-  for store in memory_stores:
-    store.cleanup(invalidated=False)
+  for store in mem_stores:
+    store.cleanup()

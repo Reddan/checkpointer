@@ -1,10 +1,10 @@
 from __future__ import annotations
-from typing import Any, TYPE_CHECKING
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-  from ..checkpoint import Checkpointer, CachedFunction
+  from ..checkpoint import CachedFunction, Checkpointer
 
 class Storage:
   checkpointer: Checkpointer

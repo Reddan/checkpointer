@@ -25,7 +25,7 @@ class CheckpointerOpts(TypedDict, total=False):
   directory: Path | str | None
   when: bool
   verbosity: Literal[0, 1, 2]
-  expiry: Callable[[datetime], bool] | timedelta | None
+  expiry: timedelta | Callable[[datetime], bool] | None
   capture: bool
   fn_hash_from: object
 
@@ -127,11 +127,8 @@ class FunctionIdent:
 
 class CachedFunction(Generic[Fn]):
   def __init__(self, checkpointer: Checkpointer, fn: Fn):
-    store_format = checkpointer.storage
-    Storage = STORAGE_MAP[store_format] if isinstance(store_format, str) else store_format
     update_wrapper(self, unwrap(fn))  # type: ignore
     self.ident = FunctionIdent(self, checkpointer, fn)
-    self.storage = Storage(self)
     self.bound = ()
 
   @overload
@@ -153,6 +150,12 @@ class CachedFunction(Generic[Fn]):
   @property
   def fn(self) -> Fn:
     return self.ident.fn  # type: ignore
+
+  @cached_property
+  def storage(self) -> Storage:
+    store_format = self.ident.checkpointer.storage
+    Storage = STORAGE_MAP[store_format] if isinstance(store_format, str) else store_format
+    return Storage(self)
 
   @property
   def cleanup(self):
