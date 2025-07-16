@@ -53,7 +53,8 @@ class PickleStorage(Storage):
     if invalidated and fn_path.exists():
       old_dirs = [path for path in fn_path.iterdir() if path.is_dir() and path != version_path]
       for path in old_dirs:
-        shutil.rmtree(path)
+        for pkl_path in path.glob("**/*.pkl"):
+          pkl_path.unlink(missing_ok=True)
       if old_dirs:
         print(f"Removed {len(old_dirs)} invalidated directories for {self.cached_fn.__qualname__}")
     if expired and self.checkpointer.expiry:

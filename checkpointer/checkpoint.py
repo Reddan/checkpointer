@@ -263,6 +263,9 @@ class CachedFunction(Generic[Fn]):
   def set(self, value, *args, **kw):
     self.storage.store(self._get_call_hash(args, kw), value)
 
+  def set_awaitable(self: CachedFunction[Callable[P, Coro[R]]], value: R, *args: P.args, **kw: P.kwargs):
+    self.set(AwaitableValue(value), *args, **kw)
+
   def __repr__(self) -> str:
     initialized = "fn_hash" in self.ident.__dict__
     fn_hash = self.ident.fn_hash[:6] if initialized else "- uninitialized"

@@ -22,7 +22,7 @@ class Storage:
     return self.checkpointer.directory / self.fn_id()
 
   def expired(self, call_hash: str) -> bool:
-    if not self.checkpointer.expiry:
+    if self.checkpointer.expiry is None:
       return False
     return self.expired_dt(self.checkpoint_date(call_hash))
 

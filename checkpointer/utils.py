@@ -121,15 +121,15 @@ def empty_dirs(path: Path) -> Iterable[Path]:
   for child in path.iterdir():
     nonempty_count += 1
     if child.is_dir():
-      for grand_child in empty_dirs(child):
-        yield grand_child
-        nonempty_count -= child == grand_child
+      for descendant in empty_dirs(child):
+        yield descendant
+        nonempty_count -= child == descendant
   if nonempty_count == 0:
     yield path
 
 def clear_directory(path: Path):
   if path.is_dir():
     for file in path.glob("**/.DS_Store"):
-      file.unlink()
+      file.unlink(missing_ok=True)
     for directory in empty_dirs(path):
       directory.rmdir()
