@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import re
 from datetime import datetime, timedelta
 from functools import cached_property, update_wrapper
@@ -13,7 +14,7 @@ from .object_hash import ObjectHash
 from .print_checkpoint import print_checkpoint
 from .storages import STORAGE_MAP, Storage, StorageType
 from .types import AwaitableValue, C, Coro, Fn, P, R, T, hash_by_from_annotation
-from .utils import flatten, to_coroutine
+from .utils import flatten, is_asyncio, to_coroutine
 
 DEFAULT_DIR = Path.home() / ".cache/checkpoints"
 
@@ -191,7 +192,11 @@ class CachedFunction(Generic[Fn]):
     return self._get_call_hash(args, kw)
 
   async def _store_coroutine(self, call_hash: str, coroutine: Coroutine):
-    return self.storage.store(call_hash, AwaitableValue(await coroutine)).value
+    if is_asyncio():
+      data = await asyncio.to_thread(self.storage.store, call_hash, AwaitableValue(await coroutine))
+      return data.value
+    else:
+      return self.storage.store(call_hash, AwaitableValue(await coroutine)).value
 
   def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, rerun=False) -> R:
     full_args = self.bound + args
@@ -267,6 +272,5 @@ class CachedFunction(Generic[Fn]):
     self.set(AwaitableValue(value), *args, **kw)
 
   def __repr__(self) -> str:
-    initialized = "fn_hash" in self.ident.__dict__
-    fn_hash = self.ident.fn_hash[:6] if initialized else "- uninitialized"
-    return f"<CachedFunction {self.fn.__name__} {fn_hash}>"
+    ident = self.ident.__dict__.get("fn_hash", "")[:6] or "- uninitialized"
+    return f"<CachedFunction {self.fn.__name__} {ident}>"

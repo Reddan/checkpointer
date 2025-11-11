@@ -45,5 +45,5 @@ class AwaitableValue(Generic[T]):
     self.value = value
 
   def __await__(self):
-    yield
+    yield from ()
     return self.value

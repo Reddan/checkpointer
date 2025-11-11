@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import inspect
 from contextlib import contextmanager, suppress
 from itertools import chain, islice
@@ -9,6 +10,13 @@ from .types import T
 
 cwd = Path.cwd().resolve()
 flatten = chain.from_iterable
+
+def is_asyncio() -> bool:
+  try:
+    loop = asyncio.get_running_loop()
+    return isinstance(loop, asyncio.AbstractEventLoop)
+  except Exception:
+    return False
 
 async def to_coroutine(value: T) -> T:
   return value

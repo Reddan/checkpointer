@@ -51,18 +51,18 @@ class PickleStorage(Storage):
     version_path = self.fn_dir()
     fn_path = version_path.parent
     if invalidated and fn_path.exists():
-      old_dirs = [path for path in fn_path.iterdir() if path.is_dir() and path != version_path]
-      for path in old_dirs:
-        for pkl_path in path.glob("**/*.pkl"):
-          pkl_path.unlink(missing_ok=True)
-      if old_dirs:
-        print(f"Removed {len(old_dirs)} invalidated directories for {self.cached_fn.__qualname__}")
+      invalidated_dirs = [path for path in fn_path.iterdir() if path.is_dir() and path != version_path]
+      pkls = [pkl for path in invalidated_dirs for pkl in path.glob("**/*.pkl")]
+      for pkl in pkls:
+        pkl.unlink(missing_ok=True)
+      if pkls:
+        print(f"Removed {len(pkls)} checkpoints from {len(invalidated_dirs)} invalidated directories for {self.cached_fn.__qualname__}")
     if expired and self.checkpointer.expiry:
       count = 0
-      for pkl_path in fn_path.glob("**/*.pkl"):
-        if self.expired_dt(filedate(pkl_path)):
+      for pkl in fn_path.glob("**/*.pkl"):
+        if self.expired_dt(filedate(pkl)):
           count += 1
-          pkl_path.unlink(missing_ok=True)
+          pkl.unlink(missing_ok=True)
       if count:
         print(f"Removed {count} expired checkpoints for {self.cached_fn.__qualname__}")
     clear_directory(fn_path)

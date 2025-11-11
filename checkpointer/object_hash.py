@@ -1,17 +1,15 @@
 import ctypes
 import hashlib
-import inspect
-import io
 import re
 import sys
-import tokenize
 import sysconfig
+import tokenize
 from collections import OrderedDict
 from collections.abc import Iterable
 from contextlib import nullcontext, suppress
 from decimal import Decimal
-from io import StringIO
-from inspect import getfile
+from inspect import getfile, getsource
+from io import BufferedRandom, BufferedReader, BufferedWriter, FileIO, StringIO, TextIOWrapper
 from itertools import chain
 from pathlib import Path
 from pickle import HIGHEST_PROTOCOL as PICKLE_PROTOCOL
@@ -146,7 +144,7 @@ class ObjectHash:
       case GeneratorType():
         self.header("generator", obj.__qualname__)._update_iterator(obj)
 
-      case io.TextIOWrapper() | io.FileIO() | io.BufferedRandom() | io.BufferedWriter() | io.BufferedReader():
+      case TextIOWrapper() | FileIO() | BufferedRandom() | BufferedWriter() | BufferedReader():
         self.header("file", encode_type_of(obj)).update(obj.name, obj.mode, obj.tell())
 
       case type():
@@ -228,7 +226,7 @@ class ObjectHash:
 
 def get_fn_body(fn: Callable) -> str:
   try:
-    source = inspect.getsource(fn)
+    source = getsource(fn)
   except OSError:
     return ""
   tokens = tokenize.generate_tokens(StringIO(source).readline)
