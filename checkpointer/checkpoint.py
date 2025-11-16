@@ -201,10 +201,10 @@ class CachedFunction(Generic[Fn]):
   def is_expired(self, call_hash: str) -> bool:
     return not self.storage.exists(call_hash) or self.storage.expired(call_hash)
 
-  def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, rerun=False) -> R:
+  def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, rerun=False, cached=False) -> R:
     full_args = self.bound + args
     params = self.ident.checkpointer
-    if not params.when:
+    if not params.when and not cached:
       return self.fn(*full_args, **kw)
     call_hash = self._get_call_hash(args, kw)
     call_id = f"{self.storage.fn_id()}/{call_hash}"
@@ -225,13 +225,16 @@ class CachedFunction(Generic[Fn]):
     except (EOFError, FileNotFoundError):
       pass
     print_checkpoint(params.verbosity >= 1, "CORRUPTED", call_id, "yellow")
-    return self._call(args, kw, True)
+    return self._call(args, kw, True, cached)
 
   def __call__(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> R:
     return self._call(args, kw)
 
+  def cached(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> R:
+    return self._call(args, kw, False, True)
+
   def rerun(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> R:
-    return self._call(args, kw, True)
+    return self._call(args, kw, True, True)
 
   def exists(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> bool:
     return self.storage.exists(self._get_call_hash(args, kw))
