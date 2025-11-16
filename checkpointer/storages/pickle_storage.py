@@ -8,7 +8,7 @@ from .storage import Storage
 
 try:
   import polars as pl
-except:
+except Exception:
   pl = None
 
 def filedate(path: Path) -> datetime:

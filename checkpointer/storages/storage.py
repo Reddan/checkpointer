@@ -1,14 +1,14 @@
 from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
   from ..checkpoint import CachedFunction, Checkpointer
 
-class Storage:
+class Storage(Protocol):
   checkpointer: Checkpointer
-  ident: CachedFunction
+  cached_fn: CachedFunction
 
   def __init__(self, cached_fn: CachedFunction):
     self.checkpointer = cached_fn.ident.checkpointer

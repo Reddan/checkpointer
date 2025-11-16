@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import pytest
+from datetime import timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Annotated, get_origin
@@ -297,10 +298,28 @@ def test_ignore_checkpoint_decorator():
   def fn_b(): ...
 
   @checkpoint
-  @checkpoint
+  @checkpoint()
   @included_decorator
   @Checkpointer()
   def fn_c(): ...
 
   assert fn_a.ident.fn_hash != fn_b.ident.fn_hash
   assert fn_b.ident.fn_hash == fn_c.ident.fn_hash
+
+@pytest.mark.asyncio
+async def test_ttl():
+  for storage in ("pickle", "memory"):
+    @checkpoint(storage=storage, expiry=timedelta(seconds=1))
+    def fn(x: int) -> int:
+      return x * x
+
+    call_hash = fn.get_call_hash(2)
+    assert fn.is_expired(call_hash)
+    fn(2)
+    await asyncio.sleep(0.9)
+    assert not fn.is_expired(call_hash)
+    fn(2)
+    await asyncio.sleep(0.1)
+    assert fn.is_expired(call_hash)
+    fn(2)
+    assert not fn.is_expired(call_hash)

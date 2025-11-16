@@ -162,7 +162,7 @@ class CachedFunction(Generic[Fn]):
   def cleanup(self):
     return self.storage.cleanup
 
-  def reinit(self, recursive=True) -> CachedFunction[Fn]:
+  def reinit(self, recursive=True) -> Self:
     depend_idents = list(self.ident.deep_idents()) if recursive else [self.ident]
     for ident in depend_idents: ident.reset()
     for ident in depend_idents: ident.fn_hash
@@ -198,26 +198,26 @@ class CachedFunction(Generic[Fn]):
     else:
       return self.storage.store(call_hash, AwaitableValue(await coroutine)).value
 
+  def is_expired(self, call_hash: str) -> bool:
+    return not self.storage.exists(call_hash) or self.storage.expired(call_hash)
+
   def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, rerun=False) -> R:
     full_args = self.bound + args
     params = self.ident.checkpointer
-    storage = self.storage
     if not params.when:
       return self.fn(*full_args, **kw)
-
     call_hash = self._get_call_hash(args, kw)
-    call_id = f"{storage.fn_id()}/{call_hash}"
-    refresh = rerun or not storage.exists(call_hash) or storage.expired(call_hash)
+    call_id = f"{self.storage.fn_id()}/{call_hash}"
 
-    if refresh:
+    if rerun or self.is_expired(call_hash):
       print_checkpoint(params.verbosity >= 1, "MEMORIZING", call_id, "blue")
       data = self.fn(*full_args, **kw)
       if iscoroutine(data):
         return self._store_coroutine(call_hash, data)
-      return storage.store(call_hash, data)
+      return self.storage.store(call_hash, data)
 
     try:
-      data = storage.load(call_hash)
+      data = self.storage.load(call_hash)
       print_checkpoint(params.verbosity >= 2, "REMEMBERED", call_id, "green")
       if isinstance(data, AwaitableValue):
         return to_coroutine(data.value)  # type: ignore
@@ -236,7 +236,7 @@ class CachedFunction(Generic[Fn]):
   def exists(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> bool:
     return self.storage.exists(self._get_call_hash(args, kw))
 
-  def delete(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs):
+  def delete(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> None:
     self.storage.delete(self._get_call_hash(args, kw))
 
   @overload
