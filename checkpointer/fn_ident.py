@@ -69,9 +69,10 @@ def extract_scope_values(code: CodeType, scope_vars: dict) -> Iterable[tuple[Att
   scope_vars = {**scope_vars, **{k: {**scope_vars[k], **v} for k, v in classvars.items()}}
   instructs = seekable(dis.get_instructions(code))
   for instruct in instructs:
-    if instruct.opname in scope_vars:
+    opname = instruct.opname.replace("LOAD_FAST_BORROW", "LOAD_FAST")
+    if opname in scope_vars:
       attrs = takewhile((x.opname in ("LOAD_ATTR", "LOAD_METHOD"), x.argval) for x in instructs)
-      attr_path = AttrPath((instruct.opname, instruct.argval, *attrs))
+      attr_path = AttrPath((opname, instruct.argval, *attrs))
       parent_path = attr_path[:-1]
       instructs.step(-1)
       obj = get_at(scope_vars, *attr_path)
