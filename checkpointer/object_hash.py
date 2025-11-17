@@ -35,6 +35,8 @@ else:
 nc = nullcontext()
 stdlib = Path(sysconfig.get_paths()["stdlib"]).resolve()
 
+Buffer = bytes | bytearray | memoryview
+
 def encode_type(t: type | FunctionType) -> str:
   return f"{t.__module__}:{t.__qualname__}"
 
@@ -69,7 +71,7 @@ class ObjectHash:
   def nested_hash(self, *objs: object) -> str:
     return ObjectHash(iter=objs, tolerable=self.tolerable.value).hexdigest()
 
-  def write_bytes(self, *data: bytes, iter: Iterable[bytes] = ()) -> Self:
+  def write_bytes(self, *data: Buffer, iter: Iterable[Buffer] = ()) -> Self:
     for d in chain(data, iter):
       self.hash.update(d)
     return self
