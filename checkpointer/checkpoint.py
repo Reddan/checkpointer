@@ -150,6 +150,8 @@ class CachedFunction(Generic[Fn]):
 
   @property
   def fn(self) -> Fn:
+    if self.bound:
+      return self.ident.fn.__get__(self.bound[0], self.bound[0].__class__)  # type: ignore
     return self.ident.fn  # type: ignore
 
   @cached_property
@@ -202,16 +204,15 @@ class CachedFunction(Generic[Fn]):
     return not self.storage.exists(call_hash) or self.storage.expired(call_hash)
 
   def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, cached=True, rerun=False) -> R:
-    full_args = self.bound + args
     params = self.ident.checkpointer
     if not cached:
-      return self.fn(*full_args, **kw)
+      return self.fn(*args, **kw)
     call_hash = self._get_call_hash(args, kw)
     call_id = f"{self.storage.fn_id()}/{call_hash}"
 
     if rerun or self.is_expired(call_hash):
       print_checkpoint(params.verbosity >= 1, "MEMORIZING", call_id, "blue")
-      data = self.fn(*full_args, **kw)
+      data = self.fn(*args, **kw)
       if iscoroutine(data):
         return self._store_coroutine(call_hash, data)
       return self.storage.store(call_hash, data)
