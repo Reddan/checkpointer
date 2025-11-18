@@ -203,15 +203,13 @@ class CachedFunction(Generic[Fn]):
   def is_expired(self, call_hash: str) -> bool:
     return not self.storage.exists(call_hash) or self.storage.expired(call_hash)
 
-  def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, cached=True, rerun=False) -> R:
-    params = self.ident.checkpointer
-    if not cached:
-      return self.fn(*args, **kw)
+  def _call(self: CachedFunction[Callable[P, R]], args: tuple, kw: dict, rerun=False) -> R:
     call_hash = self._get_call_hash(args, kw)
     call_id = f"{self.storage.fn_id()}/{call_hash}"
+    verbosity = self.ident.checkpointer.verbosity
 
     if rerun or self.is_expired(call_hash):
-      print_checkpoint(params.verbosity >= 1, "MEMORIZING", call_id, "blue")
+      print_checkpoint(verbosity >= 1, "MEMORIZING", call_id, "blue")
       data = self.fn(*args, **kw)
       if iscoroutine(data):
         return self._store_coroutine(call_hash, data)
@@ -219,23 +217,22 @@ class CachedFunction(Generic[Fn]):
 
     try:
       data = self.storage.load(call_hash)
-      print_checkpoint(params.verbosity >= 2, "REMEMBERED", call_id, "green")
+      print_checkpoint(verbosity >= 2, "REMEMBERED", call_id, "green")
       if isinstance(data, AwaitableValue):
         return to_coroutine(data.value)  # type: ignore
       return data
     except (EOFError, FileNotFoundError):
       pass
-    print_checkpoint(params.verbosity >= 1, "CORRUPTED", call_id, "yellow")
+    print_checkpoint(verbosity >= 1, "CORRUPTED", call_id, "yellow")
     return self._call(args, kw, rerun=True)
 
   def __call__(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> R:
-    return self._call(args, kw, self.ident.checkpointer.when)
+    if not self.ident.checkpointer.when:
+      return self.fn(*args, **kw)
+    return self._call(args, kw)
 
   def cached(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> R:
-    return self._call(args, kw, True)
-
-  def uncached(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> R:
-    return self._call(args, kw, False)
+    return self._call(args, kw)
 
   def rerun(self: CachedFunction[Callable[P, R]], *args: P.args, **kw: P.kwargs) -> R:
     return self._call(args, kw, rerun=True)

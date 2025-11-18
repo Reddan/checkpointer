@@ -68,6 +68,17 @@ class ObjectHash:
   def __eq__(self, value: object) -> bool:
     return isinstance(value, ObjectHash) and str(self) == str(value)
 
+  def __hash__(self) -> int:
+    self.update = self.write_bytes = self.write_text = self._update_immutable
+    return hash(str(self))
+
+  def _update_immutable(self, *_, **__) -> Self:
+    raise TypeError(
+      "This ObjectHash instance is now immutable and can’t accept more data. "
+      "You already called __hash__, which freezes it. "
+      "Create a new ObjectHash or use .copy() if you need to continue hashing."
+    )
+
   def nested_hash(self, *objs: object) -> str:
     return ObjectHash(iter=objs, tolerable=self.tolerable.value).hexdigest()
 
