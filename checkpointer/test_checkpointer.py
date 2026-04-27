@@ -52,6 +52,10 @@ def run_before_and_after_tests(tmpdir):
   checkpoint.directory = Path(tmpdir)
   yield
 
+def test_method_descriptor():
+  assert test_obj.add_and_square.fn == test_obj.add_and_square.fn
+  assert test_obj.add_and_square.fn is not test_obj.add_and_square.fn
+
 def test_same_and_different_fn_hash():
   @checkpoint
   def foo1(a: int, /, b: int, c: int = 0, *args: int, d: int, e: int = 0, **kwargs: int):

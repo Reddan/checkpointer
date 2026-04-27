@@ -160,6 +160,24 @@ def process(
 
 In this example, the hash for `numbers` ignores order, `data_file` is hashed based on its contents rather than path, and changes to `log` don't affect caching.
 
+## 🔑 Custom Instance Hashing with `__objecthash__`
+
+Any class can implement `__objecthash__` to control how its instances are hashed by `checkpointer`. When an instance is encountered during hashing, `checkpointer` calls `__objecthash__()` and hashes the returned value instead of inspecting the object's internals.
+
+```python
+class Model:
+    def __init__(self, id: str, weights: list[float]):
+        self.id = id
+        self.weights = weights
+
+    def __objecthash__(self):
+        return self.id  # Hash instances by their id only
+```
+
+The return value of `__objecthash__` can be any Python value — a string, int, tuple, dict, or anything else `checkpointer` knows how to hash. This makes it easy to define a precise, stable identity for your objects without relying on pickle or attribute inspection.
+
+Once defined, `__objecthash__` applies everywhere the class is used — as a function argument, captured variable, or nested value — with no need for `HashBy` annotations at each call site.
+
 ## 🎯 Capturing Global Variables
 
 `checkpointer` can include **captured global variables** in call hashes - these are globals your function reads during execution that may affect results.

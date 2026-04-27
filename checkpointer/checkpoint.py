@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from functools import cached_property, update_wrapper
 from inspect import Parameter, iscoroutine, signature, unwrap
 from pathlib import Path
+from types import MethodType
 from typing import (
   Callable, Concatenate, Coroutine, Generic, Iterable,
   Literal, Self, Type, TypedDict, Unpack, overload,
@@ -151,7 +152,7 @@ class CachedFunction(Generic[Fn]):
   @property
   def fn(self) -> Fn:
     if self.bound:
-      return self.ident.fn.__get__(self.bound[0], self.bound[0].__class__)  # type: ignore
+      return MethodType(self.ident.fn, self.bound[0])  # type: ignore
     return self.ident.fn  # type: ignore
 
   @cached_property
