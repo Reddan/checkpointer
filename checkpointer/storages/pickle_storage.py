@@ -56,15 +56,13 @@ class PickleStorage(Storage):
       for pkl in pkls:
         pkl.unlink(missing_ok=True)
       if pkls:
-        print(f"Removed {len(pkls)} checkpoints from {len(invalidated_dirs)} invalidated directories for {self.cached_fn.__qualname__}")
+        print(f"Removed {len(pkls)} checkpoint(s) from {len(invalidated_dirs)} invalidated directories for {self.cached_fn.__qualname__}")
     if expired and self.checkpointer.expiry:
-      count = 0
-      for pkl in fn_path.glob("**/*.pkl"):
-        if self.expired_dt(filedate(pkl)):
-          count += 1
-          pkl.unlink(missing_ok=True)
-      if count:
-        print(f"Removed {count} expired checkpoints for {self.cached_fn.__qualname__}")
+      pkls = [pkl for pkl in fn_path.glob("**/*.pkl") if self.expired_dt(filedate(pkl))]
+      for pkl in pkls:
+        pkl.unlink(missing_ok=True)
+      if pkls:
+        print(f"Removed {len(pkls)} expired checkpoint(s) for {self.cached_fn.__qualname__}")
     clear_directory(fn_path)
 
   def clear(self):

@@ -1,6 +1,10 @@
 # checkpointer · [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Reddan/checkpointer/blob/master/LICENSE) [![pypi](https://img.shields.io/pypi/v/checkpointer)](https://pypi.org/project/checkpointer/) [![pypi](https://img.shields.io/pypi/pyversions/checkpointer)](https://pypi.org/project/checkpointer/)
 
-`checkpointer` is a Python library offering a decorator-based API for memoizing (caching) function results with code-aware cache invalidation. It works with sync and async functions, supports multiple storage backends, and invalidates caches automatically when your code or dependencies change - helping you maintain correctness, speed up execution, and smooth out your workflows by skipping redundant, costly operations.
+`checkpointer` is a Python library for memoizing function results with **code-aware cache invalidation**. Decorate a function with `@checkpoint` and its return values are cached to disk (or memory). When you call it again with the same arguments, the cached result is returned instead of recomputing it.
+
+What makes it different from ordinary memoization is that the cache invalidates itself automatically when your **code** changes - not just when arguments change. Edit a function's logic, or the logic of anything it depends on, and the stale cache is discarded on the next run. You get the speed of caching without the classic footgun of serving results from code that no longer exists.
+
+It works with sync and async functions, methods, and recursion, handles complex objects and large **NumPy** / **PyTorch** arrays, and lets you fine-tune exactly what counts toward a cache key.
 
 ## 📦 Installation
 
@@ -8,161 +12,195 @@
 pip install checkpointer
 ```
 
-## 🚀 Quick Start
+Requires Python 3.11+. No mandatory dependencies. NumPy, PyTorch, and Polars are supported automatically if they happen to be installed.
 
-Apply the `@checkpoint` decorator to any function:
+## 🚀 Quick Start
 
 ```python
 from checkpointer import checkpoint
 
 @checkpoint
-def expensive_function(x: int) -> int:
-    print("Computing...")
-    return x ** 2
+def load_dataset(path: str) -> pl.DataFrame:
+    print("Reading and parsing...")
+    return pl.read_csv(path).filter(pl.col("price") > 0)
 
-result = expensive_function(4)  # Computes and stores the result
-result = expensive_function(4)  # Loads from the cache
+df = load_dataset("sales.csv")  # Reads, parses, and caches the DataFrame
+df = load_dataset("sales.csv")  # Skips the work - loaded from cache
 ```
+
+The win shows up in everyday iteration: a script or notebook that reloads a multi-second dataset on every run reads it once and reuses the result on subsequent runs. And because the cache is *code-aware*, the moment you change `load_dataset` (say, tighten the filter), the stale result is dropped and the file is re-parsed - no manual cache-busting.
+
+By default, results are pickled to `~/.cache/checkpoints`, so the cache survives across processes and restarts. (Polars `DataFrame`s are stored as Parquet automatically.)
 
 ## 🧠 How It Works
 
-When you decorate a function with `@checkpoint` and call it, `checkpointer` computes a unique identifier that represents that specific call. This identifier is based on:
+Every cached call is identified by two hashes:
 
-* The function's source code and all its user-defined dependencies,
-* Global variables used by the function (if capturing is enabled or explicitly annotated),
-* The actual arguments passed to the function.
+- **Function identity hash** - computed once per function (on first use). It captures the function's *source code* and the source of every user-defined function, method, and class it depends on, recursively. Change any of that logic and the hash changes, invalidating all cached results for that function. Cosmetic edits (comments, whitespace, formatting, type annotations) are deliberately ignored.
+- **Call hash** - computed on every call from the actual arguments (and, optionally, captured global variables). Different arguments produce different call hashes.
 
-`checkpointer` then looks up this identifier in its cache. If a valid cached result exists, it returns that immediately. Otherwise, it runs the original function, stores the result, and returns it.
+When you call a decorated function, `checkpointer` combines these into a lookup key. If a valid cached result exists, it's returned immediately; otherwise the function runs, the result is stored, and then returned.
 
-`checkpointer` is designed to be flexible through features like:
+Because dependency tracking is automatic, you rarely need to bump a version number by hand - editing the code *is* the version bump.
 
-* **Support for decorated methods**, correctly caching results bound to instances.
-* **Support for decorated async functions**, compatible with any async runtime.
-* **Robust hashing**, covering complex Python objects and large **NumPy**/**PyTorch** arrays via its internal `ObjectHash`.
-* **Targeted hashing**, allowing you to optimize how arguments and captured variables are hashed.
-* **Multi-layered caching**, letting you stack decorators for layered caching strategies without losing cache consistency.
+### What counts as a dependency
 
-### 🚨 What Causes Cache Invalidation?
+The identity hash follows your function into the code it actually uses. `checkpointer` discovers dependencies by:
 
-To ensure cache correctness, `checkpointer` tracks two types of hashes:
+- **Inspecting the global scope** - functions, methods, and classes the function references are pulled in (recursively, including their dependencies).
+- **Inferring from type annotations** - classes named in argument annotations are treated as dependencies, so changes to their methods invalidate the cache too.
+- **Analyzing constructions and calls** - objects built and methods invoked inside the function are traced back to the classes and methods they come from.
 
-#### 1. Function Identity Hash (Computed Once Per Function)
+A few things deliberately **don't** invalidate:
 
-This hash represents the decorated function itself and is computed once (usually on first invocation). It covers:
+- Cosmetic edits - comments, whitespace, formatting, and parameter type annotations.
+- Changes elsewhere in the module that the function doesn't touch.
+- Changing a parameter's default value, unless it changes the actual arguments a call resolves to.
 
-* **Function Code and Signature:**\
-    The actual logic and parameters of the function are hashed - but *not* parameter type annotations or formatting details like whitespace, newlines, comments, or trailing commas, which do **not** trigger invalidation.
+## 💡 Examples
 
-* **Dependencies:**\
-    All user-defined functions and methods that the decorated function calls or relies on, including indirect dependencies, are included recursively. Dependencies are identified by:
-    * Inspecting the function's global scope for referenced functions and objects.
-    * Inferring from the function's argument type annotations.
-    * Analyzing object constructions and method calls to identify classes and methods used.
+### Async functions
 
-* **Exclusions:**\
-    Changes elsewhere in the module unrelated to the function or its dependencies do **not** cause invalidation.
+Works with any async runtime - the awaited value is what gets cached, so repeated calls skip the network entirely.
 
-#### 2. Call Hash (Computed on Every Function Call)
+```python
+@checkpoint
+async def fetch_profile(user_id: int) -> dict:
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"https://api.example.com/users/{user_id}")
+        return resp.json()
 
-Every function call produces a call hash, combining:
+profile = await fetch_profile(42)  # Hits the API
+profile = await fetch_profile(42)  # Instant - from cache
+```
 
-* **Passed Arguments:**\
-    Includes positional and keyword arguments, combined with default values. Changing defaults alone doesn't necessarily trigger invalidation unless it affects actual call values.
+### Methods
 
-* **Captured Global Variables:**\
-    When `capture=True` or explicit capture annotations are used, `checkpointer` includes referenced global variables in the call hash. Variables annotated with `CaptureMe` are hashed on every call, causing immediate cache invalidation if they change. Variables annotated with `CaptureMeOnce` are hashed only once per Python session, improving performance by avoiding repeated hashing.
+Decorate methods directly. The instance is hashed as part of the call, so results are keyed to it - two embedders with different models cache separately, with no collisions.
 
-* **Custom Argument Hashing:**\
-    Using `HashBy` annotations, arguments or captured variables can be transformed before hashing (e.g., sorting lists to ignore order), allowing more precise or efficient call hashes.
+Two things make this example efficient: the method returns the NumPy array **as-is** (don't `.tolist()` it - `checkpointer` pickles arrays compactly and far faster than a Python list), and the class defines `__objecthash__` so hashing an instance is instant instead of crawling the whole loaded model. See [Custom Instance Hashing](#custom-instance-hashing-with-__objecthash__) for the details.
 
-## 💡 Usage
+```python
+import numpy as np
+from sentence_transformers import SentenceTransformer
 
-Once a function is decorated with `@checkpoint`, you can interact with its caching behavior using the following methods:
+class Embedder:
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+        self.model = SentenceTransformer(model_name)  # Loaded once, reused
 
-* **`expensive_function(...)`**:\
-    Call the function normally. This will compute and cache the result or load it from cache.
+    def __objecthash__(self):
+        return self.model_name  # Fast, stable identity - skips hashing the model
 
-* **`expensive_function.rerun(...)`**:\
-    Force the original function to execute and overwrite any existing cached result.
+    @checkpoint
+    def embed(self, text: str) -> np.ndarray:
+        return self.model.encode(text)  # Cached as a NumPy array
 
-* **`expensive_function.fn(...)`**:\
-    Call the undecorated function directly, bypassing the cache (useful in recursion to prevent caching intermediate steps).
+fast = Embedder("all-MiniLM-L6-v2")
+fast.embed("hello world")  # Computed and cached for this model
+fast.embed("hello world")  # From cache - the model isn't even consulted
+```
 
-* **`expensive_function.get(...)`**:\
-    Retrieve the cached result without executing the function. Raises `CheckpointError` if no valid cache exists.
+### Force recomputation
 
-* **`expensive_function.exists(...)`**:\
-    Check if a cached result exists without computing or loading it.
+`.rerun(...)` runs the function and overwrites the cache - useful when an upstream data source changed but your code didn't.
 
-* **`expensive_function.delete(...)`**:\
-    Remove the cached entry for given arguments.
+```python
+df = load_dataset("sales.csv")          # Cached
+df = load_dataset.rerun("sales.csv")    # Recomputes and overwrites the cache
+```
 
-* **`expensive_function.reinit(recursive: bool = True)`**:\
-    Recalculate the function identity hash and recapture `CaptureMeOnce` variables, updating the cached function state within the same Python session.
+### Expiry / TTL
 
-## ⚙️ Configuration & Customization
+Expire results by age with a `timedelta`, or by a custom rule with a callable that receives the store timestamp and returns `True` when stale.
 
-The `@checkpoint` decorator accepts the following parameters:
+```python
+from datetime import datetime, timedelta
 
-* **`storage`** (Type: `str` or `checkpointer.Storage`, Default: `"pickle"`)\
-    Storage backend to use: `"pickle"` (disk-based, persistent), `"memory"` (in-memory, non-persistent), or a custom `Storage` class.
+# Re-fetch a volatile rate at most once every 15 minutes
+@checkpoint(expiry=timedelta(minutes=15))
+def get_exchange_rate(base: str, quote: str) -> float:
+    return httpx.get(f"https://api.example.com/rate/{base}/{quote}").json()["rate"]
 
-* **`directory`** (Type: `str` or `pathlib.Path` or `None`, Default: `~/.cache/checkpoints`)\
-    Base directory for disk-based checkpoints (only for `"pickle"` storage).
+# Invalidate anything cached before today's UTC midnight
+@checkpoint(expiry=lambda stored_at: stored_at.date() < datetime.utcnow().date())
+def daily_report(team: str) -> dict: ...
+```
 
-* **`capture`** (Type: `bool`, Default: `False`)\
-    If `True`, includes global variables referenced by the function in call hashes (except those excluded via `NoHash`).
+### Layered / multi-backend caching
 
-* **`expiry`** (Type: `Callable[[datetime.datetime], bool]` or `datetime.timedelta`, Default: `None`)\
-    A custom callable that receives the `datetime` timestamp of a cached result. It should return `True` if the cached result is considered expired and needs recomputation, or `False` otherwise.
+Stack decorators to combine backends - e.g. a fast in-memory layer in front of a persistent disk layer - without losing cache consistency. Great for a lookup hit many times per run that's also worth keeping across runs.
 
-* **`fn_hash_from`** (Type: `Any`, Default: `None`)\
-    Override the computed function identity hash with any hashable object you provide (e.g., version strings, config IDs). This gives you explicit control over the function's version and when its cache should be invalidated.
+```python
+@checkpoint(storage="memory")  # Hot path, in-process
+@checkpoint(storage="pickle")  # Persistent, on disk
+def geocode(address: str) -> tuple[float, float]:
+    resp = httpx.get("https://api.example.com/geocode", params={"q": address})
+    return tuple(resp.json()["latlng"])
 
-* **`when`** (Type: `bool`, Default: `True`)\
-    Enable or disable checkpointing dynamically, useful for environment-based toggling.
+geocode("1600 Amphitheatre Pkwy")     # API call, written to both layers
+geocode("1600 Amphitheatre Pkwy")     # From memory
+geocode.fn.get("1600 Amphitheatre Pkwy")  # From the pickle layer underneath
+```
 
-* **`verbosity`** (Type: `int` (`0`, `1`, or `2`), Default: `1`)\
-    Controls the level of logging output from `checkpointer`.
-    * `0`: No output.
-    * `1`: Shows when functions are computed and cached.
-    * `2`: Also shows when cached results are remembered (loaded from cache).
+### Toggle caching on/off
 
-## 🔬 Customize Argument Hashing
+Flip caching with `when` - keep the persisted cache while iterating locally, but run clean in production (or in tests).
 
-You can customize how arguments are hashed without modifying the actual argument values to improve cache hit rates or speed up hashing.
+```python
+import os
 
-* **`Annotated[T, HashBy[fn]]`**:\
-    Transform the argument via `fn(argument)` before hashing. Useful for normalization (e.g., sorting lists) or optimized hashing for complex inputs.
+IS_DEV = os.environ.get("ENV") == "dev"
 
-* **`NoHash[T]`**:\
-    Exclude the argument from hashing completely, so changes to it won't trigger cache invalidation.
+@checkpoint(when=IS_DEV)  # Caches while developing; runs straight through otherwise
+def build_features(df: pl.DataFrame) -> pl.DataFrame:
+    return df.with_columns(...)  # expensive feature engineering
+```
 
-**Example:**
+### Recursion
+
+Inside a recursive function, call `.fn(...)` to invoke the original, undecorated function. This caches the top-level result without writing a separate checkpoint for every intermediate step - handy when the recursion fans out over expensive calls.
+
+```python
+@checkpoint
+def resolve_deps(package: str) -> set[str]:
+    deps = fetch_dependencies(package)  # e.g. a registry API call
+    return deps | {sub for dep in deps for sub in resolve_deps.fn(dep)}
+
+resolve_deps("flask")        # Caches the fully-resolved dependency set
+resolve_deps.get("flask")    # Reads it back; transitive deps weren't cached individually
+```
+
+## Customizing How Arguments Are Hashed
+
+Control what an argument contributes to the call hash - without changing the value the function actually receives. Useful for normalization (better hit rates) or for hashing something cheaper/more meaningful than the raw object.
+
+- **`Annotated[T, HashBy[fn]]`** - hash `fn(arg)` instead of `arg`.
+- **`NoHash[T]`** - exclude the argument from the hash entirely.
 
 ```python
 from typing import Annotated
-from checkpointer import checkpoint, HashBy, NoHash
 from pathlib import Path
 import logging
+from checkpointer import checkpoint, HashBy, NoHash
 
 def file_bytes(path: Path) -> bytes:
     return path.read_bytes()
 
 @checkpoint
 def process(
-    numbers: Annotated[list[int], HashBy[sorted]],   # Hash by sorted list
-    data_file: Annotated[Path, HashBy[file_bytes]],  # Hash by file content
-    log: NoHash[logging.Logger],                     # Exclude logger from hashing
+    numbers: Annotated[list[int], HashBy[sorted]],   # Order-insensitive
+    data_file: Annotated[Path, HashBy[file_bytes]],  # Hash by file contents, not path
+    log: NoHash[logging.Logger],                     # Ignored entirely
 ):
     ...
 ```
 
-In this example, the hash for `numbers` ignores order, `data_file` is hashed based on its contents rather than path, and changes to `log` don't affect caching.
+Here `[3, 1, 2]` and `[1, 2, 3]` hit the same cache entry, the cache tracks the file's *contents* rather than its name, and swapping loggers never invalidates anything.
 
-## 🔑 Custom Instance Hashing with `__objecthash__`
+## Custom Instance Hashing with `__objecthash__`
 
-Any class can implement `__objecthash__` to control how its instances are hashed by `checkpointer`. When an instance is encountered during hashing, `checkpointer` calls `__objecthash__()` and hashes the returned value instead of inspecting the object's internals.
+Any class can define `__objecthash__` to control how its instances are hashed. When `checkpointer` encounters an instance, it hashes the return value of `__objecthash__()` instead of inspecting the object's internals.
 
 ```python
 class Model:
@@ -171,75 +209,160 @@ class Model:
         self.weights = weights
 
     def __objecthash__(self):
-        return self.id  # Hash instances by their id only
+        return self.id  # Identity depends only on `id`
 ```
 
-The return value of `__objecthash__` can be any Python value — a string, int, tuple, dict, or anything else `checkpointer` knows how to hash. This makes it easy to define a precise, stable identity for your objects without relying on pickle or attribute inspection.
+The return value can be anything `checkpointer` knows how to hash - a string, tuple, dict, etc. Once defined, it applies everywhere the class appears: as an argument, a captured variable, or nested inside another value - no per-call-site annotation needed.
 
-Once defined, `__objecthash__` applies everywhere the class is used — as a function argument, captured variable, or nested value — with no need for `HashBy` annotations at each call site.
+## Capturing Global Variables
 
-## 🎯 Capturing Global Variables
+Sometimes a function's result depends on a module-level global, not just its arguments. `checkpointer` can fold such **captured globals** into the call hash so the cache invalidates when they change.
 
-`checkpointer` can include **captured global variables** in call hashes - these are globals your function reads during execution that may affect results.
+Enable it broadly with `capture=True` (captures every referenced global except those marked `NoHash`), or opt in per-variable with annotations:
 
-Use `capture=True` on `@checkpoint` to capture **all** referenced globals (except those explicitly excluded with `NoHash`).
+- **`CaptureMe[T]`** - hashed on *every* call; changes invalidate immediately.
+- **`CaptureMeOnce[T]`** - hashed *once per Python session*; cheaper, for expensive immutable globals.
 
-Alternatively, you can **opt-in selectively** by annotating globals with:
-
-* **`CaptureMe[T]`**:\
-    Capture the variable on every call (triggers invalidation on changes).
-
-* **`CaptureMeOnce[T]`**:\
-    Capture once per Python session (for expensive, immutable globals).
-
-You can also combine these with `HashBy` to customize how captured variables are hashed (e.g., hash by subset of attributes).
-
-**Example:**
+Both combine with `HashBy` to customize hashing.
 
 ```python
 from typing import Annotated
-from checkpointer import checkpoint, CaptureMe, CaptureMeOnce, HashBy
 from pathlib import Path
+from checkpointer import checkpoint, CaptureMe, CaptureMeOnce, HashBy
 
 def file_bytes(path: Path) -> bytes:
     return path.read_bytes()
 
-captured_data: CaptureMe[Annotated[Path, HashBy[file_bytes]]] = Path("data.txt")
-session_config: CaptureMeOnce[dict] = {"mode": "prod"}
+config_file: CaptureMe[Annotated[Path, HashBy[file_bytes]]] = Path("config.yaml")
+session_seed: CaptureMeOnce[int] = 42
 
 @checkpoint
-def process():
-    # `captured_data` is included in the call hash on every call, hashed by file content
-    # `session_config` is hashed once per session
+def run():
+    # Re-hashes `config_file` (by contents) every call;
+    # hashes `session_seed` once per session.
     ...
 ```
 
-## 🗄️ Custom Storage Backends
+## Custom Storage Backends
 
-Implement your own storage backend by subclassing `checkpointer.Storage` and overriding required methods.
-
-Within storage methods, `call_hash` identifies calls by arguments. Use `self.fn_id()` to get function identity (name + hash/version), important for organizing checkpoints.
-
-**Example:**
+Beyond the built-in `"pickle"` and `"memory"` backends, you can implement your own - e.g. to cache in Redis, S3, or a database. Subclass `Storage`, implement a handful of methods, and pass the class as `storage`. Calls are identified by `call_hash`; use `self.fn_id()` to namespace entries by function identity (name + version hash).
 
 ```python
 from checkpointer import checkpoint, Storage
-from datetime import datetime
 
-class MyCustomStorage(Storage):
-    def exists(self, call_hash):
-        fn_dir = self.checkpointer.directory / self.fn_id()
-        return (fn_dir / call_hash).exists()
-
+class RedisStorage(Storage):
     def store(self, call_hash, data):
-        ...  # Store serialized data
-        return data  # Must return data to checkpointer
+        redis.set(self._key(call_hash), pickle.dumps(data))
+        return data  # must return data
+    def load(self, call_hash):
+        return pickle.loads(redis.get(self._key(call_hash)))
+    def exists(self, call_hash):
+        return bool(redis.exists(self._key(call_hash)))
+    # ...plus delete() and checkpoint_date()
 
-    def checkpoint_date(self, call_hash): ...
-    def load(self, call_hash): ...
-    def delete(self, call_hash): ...
-
-@checkpoint(storage=MyCustomStorage)
-def custom_cached_function(x: int):
+@checkpoint(storage=RedisStorage)
+def cached(x: int):
     return x ** 2
 ```
+
+See [the `Storage` interface](#custom-storage-interface) in the API reference for the complete set of methods.
+
+---
+
+# 📚 API Reference
+
+## `@checkpoint`
+
+The default decorator. Also available as a configurable factory - call it with options to get a new, reusable checkpointer:
+
+```python
+@checkpoint                       # use defaults
+@checkpoint(storage="memory")     # override options
+dev = checkpoint(when=IS_DEV)     # reusable preset
+```
+
+### Options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `storage` | `"pickle"` \| `"memory"` \| `type[Storage]` | `"pickle"` | Backend. `"pickle"` is persistent on disk; `"memory"` lives in-process; or pass a custom `Storage` subclass. |
+| `directory` | `str` \| `Path` \| `None` | `~/.cache/checkpoints` | Root directory for the `"pickle"` backend. |
+| `capture` | `bool` | `False` | If `True`, include all referenced globals in call hashes (except those marked `NoHash`). |
+| `expiry` | `timedelta` \| `Callable[[datetime], bool]` \| `None` | `None` | Treat a cached result as stale. A `timedelta` expires by age; a callable receives the store timestamp and returns `True` when expired. |
+| `fn_hash_from` | `Any` | `None` | Override the computed function-identity hash with any hashable value (a version string, config id, etc.). Set this and source-code changes no longer auto-invalidate - *you* control the version. |
+| `when` | `bool` | `True` | Master on/off switch. When `False`, calls run straight through with no caching. |
+| `verbosity` | `0` \| `1` \| `2` | `1` | `0`: silent. `1`: log on compute/store. `2`: also log on cache hits. |
+
+## `CachedFunction` methods
+
+A decorated function becomes a `CachedFunction`. Calling it normally caches or loads; the following give finer control. (`*args, **kw` below are always the function's own arguments.)
+
+| Member | Description |
+| --- | --- |
+| `fn(*args, **kw)` | The original, undecorated function (a property). Bypasses the cache - use it in recursion. |
+| `rerun(*args, **kw)` | Force execution and overwrite any cached result. |
+| `cached(*args, **kw)` | Like calling normally, but ignores `when=False` (always uses the cache). |
+| `get(*args, **kw)` | Return the cached result without computing. Raises `CheckpointError` if absent. |
+| `get_or(default, *args, **kw)` | Like `get`, but returns `default` instead of raising. |
+| `set(value, *args, **kw)` | Manually store `value` as the result for these arguments. Use this for a **sync** function, whose return value is stored directly. |
+| `set_awaitable(value, *args, **kw)` | The `set` for an **async** function, whose resolved value is stored wrapped so that loading it yields an awaitable (matching the original signature) - the wrapping is handled for you. |
+| `exists(*args, **kw)` | `True` if a cached entry exists for these arguments. |
+| `delete(*args, **kw)` | Remove the cached entry for these arguments. |
+| `get_call_hash(*args, **kw)` | The call hash these arguments produce. |
+| `is_expired(call_hash)` | `True` if no entry exists or it has expired per `expiry`. |
+| `reinit(recursive=True)` | Recompute the function-identity hash and re-capture `CaptureMeOnce` globals within the current session. |
+| `cleanup(invalidated=True, expired=True)` | Delete checkpoints from outdated function versions and/or expired entries. |
+| `ident` | The `FunctionIdent` - exposes `fn_hash`, dependencies, and capturables. |
+| `storage` | The bound `Storage` instance. |
+
+## Annotations & types
+
+Importable from `checkpointer`:
+
+- `HashBy[fn]` - used as `Annotated[T, HashBy[fn]]`; hash by `fn(value)`.
+- `NoHash[T]` - exclude a value from hashing (alias for `Annotated[T, HashBy[to_none]]`).
+- `CaptureMe[T]` - capture a global into the call hash on every call.
+- `CaptureMeOnce[T]` - capture a global once per session.
+- `AwaitableValue` - the internal wrapper for async results. You normally never touch it; reach for `set_awaitable` instead of constructing one by hand.
+- `CachedFunction`, `Checkpointer`, `FunctionIdent` - core types.
+- `CheckpointError` - raised by `get` when no valid cache exists.
+- `Storage`, `PickleStorage`, `MemoryStorage` - storage backends.
+- `ObjectHash` - the hashing engine (handles arbitrary objects, NumPy/PyTorch arrays, circular references, and `__objecthash__`).
+
+## Pre-configured checkpointers
+
+Ready-made presets, importable from `checkpointer`:
+
+| Name | Equivalent to |
+| --- | --- |
+| `checkpoint` | `Checkpointer()` - disk-backed defaults. |
+| `capture_checkpoint` | `Checkpointer(capture=True)` - captures all referenced globals. |
+| `memory_checkpoint` | `Checkpointer(storage="memory", verbosity=0)` - in-process, silent. |
+| `tmp_checkpoint` | `Checkpointer(directory="<tmp>/checkpoints")` - stored in the system temp dir. |
+| `static_checkpoint` | `Checkpointer(fn_hash_from=())` - disables code-aware invalidation; the identity hash is fixed until you change `fn_hash_from`. |
+
+## Module-level functions
+
+- `cleanup_all(invalidated=True, expired=True)` - run `cleanup` on every live `CachedFunction`.
+- `cleanup_memory_storage()` - drop in-memory checkpoints for functions that no longer exist.
+- `get_function_hash(fn)` - compute a function's identity hash without decorating it.
+
+## Custom `Storage` interface
+
+Subclass `Storage` and implement the methods below. The base class provides `fn_id()`, `fn_dir()`, and expiry helpers.
+
+```python
+class Storage:
+    checkpointer: Checkpointer
+    cached_fn: CachedFunction
+
+    def store(self, call_hash, data) -> Any: ...   # persist & return data
+    def exists(self, call_hash) -> bool: ...
+    def load(self, call_hash) -> Any: ...
+    def delete(self, call_hash) -> None: ...
+    def checkpoint_date(self, call_hash) -> datetime: ...
+    def cleanup(self, invalidated=True, expired=True) -> None: ...
+    def clear(self) -> None: ...
+```
+
+The `"pickle"` backend additionally serializes Polars `DataFrame`s as Parquet when Polars is installed.
